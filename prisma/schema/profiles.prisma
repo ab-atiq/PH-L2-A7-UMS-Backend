@@ -1,0 +1,61 @@
+// ==========================================================
+// Role Profiles
+// ==========================================================
+
+model StudentProfile {
+  id                String      @id @default(uuid())
+  userId            String      @unique
+  user              User        @relation(fields: [userId], references: [id])
+  studentId         String      @unique
+  programId         String?
+  program           Program?    @relation(fields: [programId], references: [id])
+  departmentId      String?
+  department        Department? @relation(fields: [departmentId], references: [id])
+  currentSemesterId String?
+  currentSemester   Semester?   @relation(fields: [currentSemesterId], references: [id])
+
+  batchYear     Int?
+  gender        Gender?
+  dateOfBirth   DateTime?
+  address       String?
+  guardianName  String?
+  guardianPhone String?
+  admissionDate DateTime?
+
+  enrollments Enrollment[]
+  attendances Attendance[]
+  results     Result[]
+  feeInvoices FeeInvoice[]
+  payments    Payment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([studentId])
+  @@index([programId])
+  @@index([departmentId])
+  @@map("student_profiles")
+}
+
+model FacultyProfile {
+  id             String      @id @default(uuid())
+  userId         String      @unique
+  user           User        @relation(fields: [userId], references: [id])
+  employeeId     String      @unique
+  departmentId   String?
+  department     Department? @relation(fields: [departmentId], references: [id])
+  designation    String?
+  specialization String?
+  joinDate       DateTime?
+
+  sectionAssignments SectionFaculty[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([employeeId])
+  @@index([departmentId])
+  @@map("faculty_profiles")
+}

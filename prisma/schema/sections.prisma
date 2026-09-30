@@ -1,0 +1,49 @@
+// ==========================================================
+// Sections / Teaching Assignments
+// A Section is a specific offering of a Course within a
+// Semester (e.g. "CS101 - Section A - Fall 2026").
+// ==========================================================
+
+model Section {
+  id          String        @id @default(uuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id])
+  semesterId  String
+  semester    Semester      @relation(fields: [semesterId], references: [id])
+  sectionName String
+  capacity    Int
+  room        String?
+  schedule    Json?
+  status      SectionStatus @default(DRAFT)
+
+  facultyAssignments SectionFaculty[]
+  enrollments        Enrollment[]
+  attendances        Attendance[]
+  exams              Exam[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([courseId, semesterId, sectionName])
+  @@index([courseId])
+  @@index([semesterId])
+  @@index([status])
+  @@map("sections")
+}
+
+model SectionFaculty {
+  id        String         @id @default(uuid())
+  sectionId String
+  section   Section        @relation(fields: [sectionId], references: [id])
+  facultyId String
+  faculty   FacultyProfile @relation(fields: [facultyId], references: [id])
+  isPrimary Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sectionId, facultyId])
+  @@index([sectionId])
+  @@index([facultyId])
+  @@map("section_faculty")
+}

@@ -1,0 +1,109 @@
+// ==========================================================
+// Academic Hierarchy: Department -> Program -> Course
+// Plus Semester (the academic term container)
+// ==========================================================
+
+model Department {
+  id          String       @id @default(uuid())
+  name        String
+  code        String       @unique
+  description String?
+  status      EntityStatus @default(ACTIVE)
+
+  programs        Program[]
+  courses         Course[]
+  studentProfiles StudentProfile[]
+  facultyProfiles FacultyProfile[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([code])
+  @@index([status])
+  @@map("departments")
+}
+
+model Program {
+  id            String       @id @default(uuid())
+  name          String
+  code          String       @unique
+  departmentId  String
+  department    Department   @relation(fields: [departmentId], references: [id])
+  durationYears Int
+  totalCredits  Int
+  status        EntityStatus @default(ACTIVE)
+
+  students StudentProfile[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([code])
+  @@index([departmentId])
+  @@index([status])
+  @@map("programs")
+}
+
+model Course {
+  id           String       @id @default(uuid())
+  courseCode   String       @unique
+  title        String
+  description  String?
+  credits      Int
+  departmentId String
+  department   Department   @relation(fields: [departmentId], references: [id])
+  status       CourseStatus @default(DRAFT)
+
+  prerequisitesFor CoursePrerequisite[] @relation("CourseToPrereq")
+  prerequisiteOf   CoursePrerequisite[] @relation("PrereqToCourse")
+  sections         Section[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([courseCode])
+  @@index([departmentId])
+  @@index([status])
+  @@map("courses")
+}
+
+// Composite unique so a course cannot list the same prerequisite twice
+model CoursePrerequisite {
+  id             String @id @default(uuid())
+  courseId       String
+  course         Course @relation("CourseToPrereq", fields: [courseId], references: [id])
+  prerequisiteId String
+  prerequisite   Course @relation("PrereqToCourse", fields: [prerequisiteId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([courseId, prerequisiteId])
+  @@index([courseId])
+  @@index([prerequisiteId])
+  @@map("course_prerequisites")
+}
+
+model Semester {
+  id                String         @id @default(uuid())
+  name              String         @unique
+  startDate         DateTime
+  endDate           DateTime
+  registrationStart DateTime
+  registrationEnd   DateTime
+  status            SemesterStatus @default(UPCOMING)
+
+  sections    Section[]
+  students    StudentProfile[]
+  feeInvoices FeeInvoice[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@index([startDate])
+  @@map("semesters")
+}

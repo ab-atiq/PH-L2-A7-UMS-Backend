@@ -1,0 +1,55 @@
+// ==========================================================
+// Enrollment / Attendance
+// ==========================================================
+
+model Enrollment {
+  id         String           @id @default(uuid())
+  studentId  String
+  student    StudentProfile   @relation(fields: [studentId], references: [id])
+  sectionId  String
+  section    Section          @relation(fields: [sectionId], references: [id])
+  status     EnrollmentStatus @default(ENROLLED)
+  enrolledAt DateTime         @default(now())
+  droppedAt  DateTime?
+  finalGrade Grade?
+  gradePoint Float?
+
+  attendances Attendance[]
+  results     Result[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([studentId, sectionId])
+  @@index([studentId])
+  @@index([sectionId])
+  @@index([status])
+  @@map("enrollments")
+}
+
+// One record per student, per section, per class date
+model Attendance {
+  id           String           @id @default(uuid())
+  enrollmentId String
+  enrollment   Enrollment       @relation(fields: [enrollmentId], references: [id])
+  studentId    String
+  student      StudentProfile   @relation(fields: [studentId], references: [id])
+  sectionId    String
+  section      Section          @relation(fields: [sectionId], references: [id])
+  classDate    DateTime
+  status       AttendanceStatus
+  markedById   String
+  remarks      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([studentId, sectionId, classDate])
+  @@index([sectionId])
+  @@index([studentId])
+  @@index([classDate])
+  @@index([status])
+  @@map("attendance")
+}

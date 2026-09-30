@@ -1,0 +1,44 @@
+// ==========================================================
+// Notifications / Audit Trail
+// ==========================================================
+
+model Notification {
+  id       String           @id @default(uuid())
+  userId   String
+  user     User             @relation(fields: [userId], references: [id])
+  type     NotificationType @default(INFO)
+  title    String
+  message  String
+  isRead   Boolean          @default(false)
+  readAt   DateTime?
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  actorId   String?
+  actor     User?       @relation(fields: [actorId], references: [id])
+  action    AuditAction
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([entity])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

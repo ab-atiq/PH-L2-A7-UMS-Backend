@@ -1,0 +1,53 @@
+// ==========================================================
+// Identity & Access
+// ==========================================================
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  passwordHash  String?
+  role          Role
+  status        UserStatus @default(PENDING_VERIFICATION)
+  firstName     String
+  lastName      String
+  phone         String?
+  avatarUrl     String?
+  googleId      String?    @unique
+  emailVerified Boolean    @default(false)
+  lastLoginAt   DateTime?
+
+  studentProfile StudentProfile?
+  facultyProfile FacultyProfile?
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime
+  revoked   Boolean   @default(false)
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}

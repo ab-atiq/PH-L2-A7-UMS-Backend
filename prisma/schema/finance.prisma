@@ -1,0 +1,52 @@
+// ==========================================================
+// Finance: Invoices / Payments
+// ==========================================================
+
+model FeeInvoice {
+  id            String         @id @default(uuid())
+  invoiceNumber String         @unique
+  studentId     String
+  student       StudentProfile @relation(fields: [studentId], references: [id])
+  semesterId    String?
+  semester      Semester?      @relation(fields: [semesterId], references: [id])
+  description   String
+  amount        Decimal        @db.Decimal(10, 2)
+  dueDate       DateTime
+  status        InvoiceStatus  @default(PENDING)
+
+  payments Payment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([studentId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("fee_invoices")
+}
+
+model Payment {
+  id               String         @id @default(uuid())
+  transactionId    String         @unique
+  invoiceId        String
+  invoice          FeeInvoice     @relation(fields: [invoiceId], references: [id])
+  studentId        String
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  amount           Decimal        @db.Decimal(10, 2)
+  gateway          PaymentGateway
+  status           PaymentStatus  @default(INITIATED)
+  gatewayReference String?
+  gatewayResponse  Json?
+  paidAt           DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([invoiceId])
+  @@index([studentId])
+  @@index([status])
+  @@index([transactionId])
+  @@map("payments")
+}

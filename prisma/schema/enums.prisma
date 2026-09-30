@@ -1,0 +1,157 @@
+// ==========================================================
+// Shared Enums
+// ==========================================================
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+enum AuthProvider {
+  GOOGLE
+  CREDENTIAL
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SemesterStatus {
+  UPCOMING
+  REGISTRATION_OPEN
+  CURRENT
+  COMPLETED
+  ARCHIVED
+}
+
+enum SectionStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  CANCELLED
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  DROPPED
+  COMPLETED
+  FAILED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum ExamType {
+  QUIZ
+  ASSIGNMENT
+  MIDTERM
+  FINAL
+  PROJECT
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+  CANCELLED
+}
+
+enum ResultStatus {
+  DRAFT
+  SUBMITTED
+  PUBLISHED
+}
+
+enum Grade {
+  A_PLUS
+  A
+  A_MINUS
+  B_PLUS
+  B
+  B_MINUS
+  C_PLUS
+  C
+  C_MINUS
+  D
+  F
+  I
+  W
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentGateway {
+  STRIPE
+  BKASH
+  SSLCOMMERZ
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+  PAYMENT
+  ACADEMIC
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  REGISTER
+  ROLE_CHANGE
+  CREATE
+  UPDATE
+  DELETE
+  ENROLL
+  DROP_ENROLLMENT
+  MARK_ATTENDANCE
+  UPDATE_ATTENDANCE
+  CREATE_EXAM
+  UPDATE_EXAM
+  CREATE_RESULT
+  UPDATE_RESULT
+  PUBLISH_RESULT
+  CREATE_INVOICE
+  UPDATE_PAYMENT_STATUS
+  ADMIN_ACTION
+}
