@@ -9,10 +9,15 @@ const StudentRegistrationZodSchema = z.object({
     .min(8, "Password Must Minimum 8 Characters Long.")
     .regex(/[a-z]/, "Password must contain atleast 1 Lowercase Letter")
     .regex(/[A-Z]/, "Password must contain atleast 1 Uppercase Letter")
-
     .regex(/[0-9]/, "Password must contain atleast 1 Number")
     .regex(/[^A-Za-z0-9]/, "Password must contain atleast 1 Special Character"),
-  phone: z.string().min(7).max(20).optional(),
+  phone: z
+    .string()
+    .trim()
+    .refine((val) => val === "" || /^(?:\+?880|0)1[3-9]\d{8}$/.test(val), {
+      message: "Please provide valid Bangladeshi number",
+    })
+    .optional(),
 });
 
 const EmailVerifyZodSchema = z.object({
@@ -27,7 +32,6 @@ const LoginZodSchema = z.object({
     .min(8, "Password Must Minimum 8 Characters Long.")
     .regex(/[a-z]/, "Password must contain atleast 1 Lowercase Letter")
     .regex(/[A-Z]/, "Password must contain atleast 1 Uppercase Letter")
-
     .regex(/[0-9]/, "Password must contain atleast 1 Number")
     .regex(/[^A-Za-z0-9]/, "Password must contain atleast 1 Special Character"),
 });
@@ -43,7 +47,6 @@ const ResetPasswordZodSchema = z.object({
     .min(8, "Password Must Minimum 8 Characters Long.")
     .regex(/[a-z]/, "Password must contain atleast 1 Lowercase Letter")
     .regex(/[A-Z]/, "Password must contain atleast 1 Uppercase Letter")
-
     .regex(/[0-9]/, "Password must contain atleast 1 Number")
     .regex(/[^A-Za-z0-9]/, "Password must contain atleast 1 Special Character"),
   otp: z.string().length(6),
