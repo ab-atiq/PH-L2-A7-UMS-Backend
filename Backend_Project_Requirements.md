@@ -46,32 +46,37 @@ No separate Registrar / Finance Admin / Department Admin / Super Admin roles. Al
 
 ### 3.1 Role Responsibility Matrix
 
-| Capability                                                                    |   STUDENT   |         FACULTY          |       ADMIN        |
-| ----------------------------------------------------------------------------- | :---------: | :----------------------: | :----------------: |
-| Register / Login (incl. Google)                                               |     ✅      |      — (login only)      |         —          |
-| View/update own profile                                                       |     ✅      |            ✅            |         —          |
-| View departments/programs                                                     |     ✅      |            —             |     ✅ manage      |
-| View courses, details, prerequisites, sections                                |     ✅      |            —             |     ✅ manage      |
-| Register / drop courses                                                       |     ✅      |            —             |         —          |
-| View enrollments, schedule                                                    |     ✅      |      ✅ (assigned)       |         —          |
-| View attendance                                                               |  ✅ (own)   | ✅ manage (own sections) |         —          |
-| View/manage exams                                                             |  ✅ (view)  |        ✅ manage         |         —          |
-| Enter/update marks, publish results                                           |      —      |     ✅ enter/update      |     ✅ publish     |
-| View results/GPA/transcript                                                   |     ✅      |    course performance    |      reports       |
-| Fee invoices & payments                                                       | ✅ view/pay |            —             | ✅ create/view all |
-| Notifications                                                                 |     ✅      |            ✅            |     ✅ manage      |
-| Users, faculty, students, departments, programs, courses, semesters, sections |      —      |            —             |    ✅ full CRUD    |
-| Assign faculty to sections                                                    |      —      |            —             |         ✅         |
-| Publish/unpublish courses                                                     |      —      |            —             |         ✅         |
-| Audit logs, system analytics, dashboard stats                                 |      —      |            —             |         ✅         |
+| Capability                                                                    |   STUDENT   |         FACULTY          |       ADMIN        | USER |
+| ----------------------------------------------------------------------------- | :---------: | :----------------------: | :----------------: | :--: |
+| Register / Login (incl. Google)                                               |     ✅      |      — (login only)      |         —          |  ✅  |
+| View/update own profile                                                       |     ✅      |            ✅            |         —          |      |
+| View departments/programs                                                     |     ✅      |            —             |     ✅ manage      |      |
+| View courses, details, prerequisites, sections                                |     ✅      |            —             |     ✅ manage      |      |
+| Register / drop courses                                                       |     ✅      |            —             |         —          |      |
+| View enrollments, schedule                                                    |     ✅      |      ✅ (assigned)       |         —          |      |
+| View attendance                                                               |  ✅ (own)   | ✅ manage (own sections) |         —          |      |
+| View/manage exams                                                             |  ✅ (view)  |        ✅ manage         |         —          |      |
+| Enter/update marks, publish results                                           |      —      |     ✅ enter/update      |     ✅ publish     |      |
+| View results/GPA/transcript                                                   |     ✅      |    course performance    |      reports       |      |
+| Fee invoices & payments                                                       | ✅ view/pay |            —             | ✅ create/view all |      |
+| Notifications                                                                 |     ✅      |            ✅            |     ✅ manage      |      |
+| Users, faculty, students, departments, programs, courses, semesters, sections |      —      |            —             |    ✅ full CRUD    |      |
+| Assign faculty to sections                                                    |      —      |            —             |         ✅         |      |
+| Publish/unpublish courses                                                     |      —      |            —             |         ✅         |      |
+| Audit logs, system analytics, dashboard stats                                 |      —      |            —             |         ✅         |      |
 
 ---
 
 ## 4. Core Business Workflows
 
-### Workflow 1 — Student Registration
+### Workflow 1 —
 
-Register → Email verification → Login → Complete profile → Select program → Student dashboard.
+1. User Registration & Profile Completion
+   Register → Email verification → Login → Complete profile
+2. Student Registration
+   Apply for Student → Select program → Student dashboard.
+3. Faculty Registration
+   Apply for Faculty → Select department → Faculty dashboard.
 
 ### Workflow 2 — Course Registration (Prisma Transaction Required)
 

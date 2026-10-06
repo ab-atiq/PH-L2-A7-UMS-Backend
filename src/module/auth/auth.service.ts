@@ -162,7 +162,7 @@ const verifyStudentEmail = async (payload: IVerifyEmailPayload) => {
       firstName: registration.firstName,
       lastName: registration.lastName,
       ...(registration.phone ? { phone: registration.phone } : {}),
-      role: Role.STUDENT,
+      role: Role.USER,
       status: UserStatus.ACTIVE,
       emailVerified: true,
     },
