@@ -9,6 +9,17 @@ enum Role {
   ADMIN
 }
 
+enum ApplicationRole {
+  STUDENT
+  FACULTY
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum AuthProvider {
   GOOGLE
   CREDENTIAL

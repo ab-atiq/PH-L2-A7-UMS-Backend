@@ -5,7 +5,7 @@ import { AppError } from "../utils/AppError.js";
 import { catchAsync } from "../utils/catchAsync.js";
 
 export const validateRequest = (
-  zodSchema: z.ZodObject,
+  zodSchema: z.ZodType,
   source: "body" | "query" = "body",
 ) => {
   return catchAsync((req: Request, res: Response, next: NextFunction) => {

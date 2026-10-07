@@ -18,6 +18,7 @@ model User {
 
   studentProfile StudentProfile?
   facultyProfile FacultyProfile?
+  roleApplication RoleApplication?
 
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]

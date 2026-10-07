@@ -321,7 +321,7 @@ const googleLogin = async (payload: IGoogleLoginPayload) => {
         firstName: googlePayload.given_name || firstName || "Student",
         lastName:
           googlePayload.family_name || lastNameParts.join(" ") || "User",
-        role: Role.STUDENT,
+        role: Role.USER,
         status: UserStatus.ACTIVE,
         emailVerified: true,
         googleId: googlePayload.sub,

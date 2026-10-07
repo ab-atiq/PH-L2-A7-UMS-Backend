@@ -1,0 +1,19 @@
+model RoleApplication {
+  id                    String            @id @default(uuid())
+  userId                String            @unique
+  user                  User              @relation(fields: [userId], references: [id])
+  requestedRole         ApplicationRole
+  status                ApplicationStatus @default(PENDING)
+  programInterest       String?
+  departmentInterest    String?
+  highestQualification  String?
+  specialization        String?
+  statement             String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requestedRole, status])
+  @@index([createdAt])
+  @@map("role_applications")
+}

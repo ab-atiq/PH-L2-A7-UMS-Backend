@@ -6,6 +6,7 @@ import { prisma } from "./lib/prisma.js";
 import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 import { notFound } from "./middleware/notFound.js";
 import { AdminRoutes } from "./module/admin/admin.route.js";
+import { ApplicationRoutes } from "./module/application/application.route.js";
 import { AttendanceRoutes } from "./module/attendance/attendance.route.js";
 import { AuditLogRoutes } from "./module/audit-log/audit-log.route.js";
 import { AuthRoutes } from "./module/auth/auth.route.js";
@@ -65,6 +66,7 @@ app.use("/api/v1/notifications", NotificationRoutes);
 app.use("/api/v1/transcripts", TranscriptRoutes);
 app.use("/api/v1/audit-logs", AuditLogRoutes);
 app.use("/api/v1/auth", AuthRoutes);
+app.use("/api/v1/applications", ApplicationRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello World!");

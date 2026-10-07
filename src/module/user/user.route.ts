@@ -10,20 +10,20 @@ const router = Router();
 
 router.get(
   "/me",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
   UserController.getMyProfile,
 );
 
 router.patch(
   "/me",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
   validateRequest(UpdateMyProfileSchema),
   UserController.updateMyProfile,
 );
 
 router.patch(
   "/profile-image",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
   upload.single("profileImage"),
   UserController.uploadProfileImage,
 );
