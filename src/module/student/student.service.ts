@@ -3,12 +3,14 @@ import {
   AuditAction,
   EntityStatus,
   Role,
+  UserStatus,
 } from "../../../generated/prisma/enums.js";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../utils/AppError.js";
 import type {
   StudentSelfProfileData,
   StudentCreateData,
+  StudentListQuery,
   StudentUpdateData,
 } from "./student.interface.js";
 
@@ -25,6 +27,7 @@ const studentSelect = {
   admissionDate: true,
   createdAt: true,
   updatedAt: true,
+  deletedAt: true,
   user: {
     select: {
       id: true,
@@ -58,6 +61,99 @@ const ensureStudentUser = async (userId: string) => {
   });
   if (!user || user.role !== Role.STUDENT)
     throw new AppError(httpStatus.NOT_FOUND, "Active student user not found");
+};
+
+const listStudentProfilesByAdmin = async (query: StudentListQuery) => {
+  const page = Math.max(Number(query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(query.limit || 20), 1), 100);
+  const includeDeleted =
+    query.includeDeleted === true || query.includeDeleted === "true";
+  const search = query.search?.trim();
+  const where = {
+    ...(includeDeleted ? {} : { deletedAt: null }),
+    ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+    ...(query.programId ? { programId: query.programId } : {}),
+    ...(query.currentSemesterId
+      ? { currentSemesterId: query.currentSemesterId }
+      : {}),
+    ...(query.status ? { user: { status: query.status as UserStatus } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { studentId: { contains: search, mode: "insensitive" as const } },
+            {
+              user: {
+                OR: [
+                  {
+                    firstName: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    lastName: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  { email: { contains: search, mode: "insensitive" as const } },
+                ],
+              },
+            },
+            {
+              department: {
+                OR: [
+                  {
+                    name: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    code: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              program: {
+                OR: [
+                  {
+                    name: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    code: {
+                      contains: search,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+  const [data, total] = await Promise.all([
+    prisma.studentProfile.findMany({
+      where,
+      select: studentSelect,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: [{ studentId: "asc" }],
+    }),
+    prisma.studentProfile.count({ where }),
+  ]);
+  return {
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 const ensureRelations = async (
@@ -146,9 +242,9 @@ const createStudentProfile = async (
   return profile;
 };
 
-const getStudentProfile = async (studentId: string) => {
+const getStudentProfile = async (studentId: string, includeDeleted = false) => {
   const profile = await prisma.studentProfile.findFirst({
-    where: { studentId, deletedAt: null },
+    where: { studentId, ...(includeDeleted ? {} : { deletedAt: null }) },
     select: studentSelect,
   });
 
@@ -298,10 +394,28 @@ const updateStudentProfile = async (
     }
   }
 
-  const profile = await prisma.studentProfile.update({
-    where: { studentId },
-    data,
-    select: studentSelect,
+  const { firstName, lastName, phone, ...profileData } = data;
+  const targetUserId = data.userId ?? existing.userId;
+  const profile = await prisma.$transaction(async (transaction) => {
+    if (
+      firstName !== undefined ||
+      lastName !== undefined ||
+      phone !== undefined
+    ) {
+      await transaction.user.update({
+        where: { id: targetUserId },
+        data: {
+          ...(firstName === undefined ? {} : { firstName }),
+          ...(lastName === undefined ? {} : { lastName }),
+          ...(phone === undefined ? {} : { phone }),
+        },
+      });
+    }
+    return transaction.studentProfile.update({
+      where: { studentId },
+      data: profileData,
+      select: studentSelect,
+    });
   });
 
   await audit(actorId, AuditAction.UPDATE, profile.id);
@@ -329,6 +443,7 @@ const deleteStudentProfile = async (studentId: string, actorId: string) => {
 };
 
 export const StudentService = {
+  listStudentProfilesByAdmin,
   createStudentProfile,
   getStudentProfile,
   updateStudentProfile,

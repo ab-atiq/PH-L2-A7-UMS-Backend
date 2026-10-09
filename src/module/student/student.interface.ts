@@ -17,6 +17,20 @@ export type StudentCreateData = {
 
 export type StudentUpdateData = Partial<Omit<StudentCreateData, "userId">> & {
   userId?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+};
+
+export type StudentListQuery = {
+  page?: number | string;
+  limit?: number | string;
+  search?: string;
+  departmentId?: string;
+  programId?: string;
+  currentSemesterId?: string;
+  status?: string;
+  includeDeleted?: boolean | string;
 };
 
 export type StudentSelfProfileData = Pick<

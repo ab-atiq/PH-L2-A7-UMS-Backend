@@ -69,8 +69,7 @@ const listSemesters = async (
 };
 
 const semesterList = (query: SemesterListQuery) => listSemesters(query);
-const semesterListByAdmin = (query: SemesterListQuery) =>
-  listSemesters(query, true);
+const semesterListByAdmin = (query: SemesterListQuery) => listSemesters(query);
 
 const getSingleSemester = async (id: string) => {
   const item = await prisma.semester.findFirst({

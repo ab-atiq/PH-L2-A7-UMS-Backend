@@ -18,7 +18,7 @@ export const StudentCreateValidation = z.object({
   admissionDate: z.coerce.date().nullable().optional(),
 });
 
-export const StudentUpdateValidation = StudentCreateValidation.omit({
+const StudentUpdateBaseValidation = StudentCreateValidation.omit({
   userId: true,
   studentId: true,
 }).extend({
@@ -32,4 +32,36 @@ export const StudentSelfProfileValidation = StudentCreateValidation.pick({
   address: true,
   guardianName: true,
   guardianPhone: true,
+});
+
+export const StudentListValidation = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  search: z.string().trim().optional(),
+  departmentId: id.optional(),
+  programId: id.optional(),
+  currentSemesterId: id.optional(),
+  status: z
+    .enum(["ACTIVE", "INACTIVE", "SUSPENDED", "PENDING_VERIFICATION"])
+    .optional(),
+  includeDeleted: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
+export const StudentUpdateValidation = StudentUpdateBaseValidation.extend({
+  firstName: z.string().trim().min(2).max(50).optional(),
+  lastName: z.string().trim().min(2).max(50).optional(),
+  phone: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || /^(?:\+?880|0)1[3-9]\d{8}$/.test(value),
+      {
+        message: "Please provide valid Bangladeshi number",
+      },
+    )
+    .nullable()
+    .optional(),
 });

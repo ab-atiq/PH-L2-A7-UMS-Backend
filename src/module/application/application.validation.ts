@@ -18,6 +18,20 @@ export const CreateRoleApplicationSchema = z.discriminatedUnion(
   ],
 );
 
-export type CreateRoleApplication = z.infer<
-  typeof CreateRoleApplicationSchema
+export type CreateRoleApplication = z.infer<typeof CreateRoleApplicationSchema>;
+
+export const AdminApplicationListSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  search: z.string().trim().optional(),
+  requestedRole: z.enum(["STUDENT", "FACULTY"]).optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+});
+
+export const AdminApplicationStatusSchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]),
+});
+
+export type AdminApplicationListQuery = z.infer<
+  typeof AdminApplicationListSchema
 >;

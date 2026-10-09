@@ -91,7 +91,7 @@ const getSingleCourse = async (id: string) => {
 };
 
 const courseListByAdmin = async (query: CourseListQuery) =>
-  listCourses(query, true);
+  listCourses(query, false);
 
 const getSingleCourseByAdmin = async (id: string) => {
   const item = await prisma.course.findUnique({

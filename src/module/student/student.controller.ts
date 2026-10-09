@@ -24,9 +24,24 @@ const createStudentProfile = catchAsync(async (req: Request, res: Response) => {
     data,
   });
 });
+
+const listStudentProfilesByAdmin = catchAsync(
+  async (req: Request, res: Response) => {
+    const result = await StudentService.listStudentProfilesByAdmin(req.query);
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Student profiles fetched successfully",
+      data: result.data,
+      meta: result.meta,
+    });
+  },
+);
+
 const getStudentProfile = catchAsync(async (req: Request, res: Response) => {
   const data = await StudentService.getStudentProfile(
     String(req.params.studentId),
+    req.user?.role === "ADMIN",
   );
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -114,6 +129,7 @@ const deleteMyStudentProfile = catchAsync(
 );
 
 export const StudentController = {
+  listStudentProfilesByAdmin,
   createStudentProfile,
   getStudentProfile,
   updateStudentProfile,

@@ -13,6 +13,31 @@ const getUserId = (req: Request) => {
   return req.user.userId;
 };
 
+const listApplicationsByAdmin = catchAsync(async (req, res) => {
+  const result = await ApplicationService.listApplicationsByAdmin(req.query);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Role applications fetched successfully",
+    data: result.data,
+    meta: result.meta,
+  });
+});
+
+const updateApplicationStatus = catchAsync(async (req, res) => {
+  const application = await ApplicationService.updateApplicationStatus(
+    String(req.params.id),
+    req.body.status,
+    getUserId(req),
+  );
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Application status updated successfully",
+    data: application,
+  });
+});
+
 const createRoleApplication = catchAsync(async (req, res) => {
   const application = await ApplicationService.createRoleApplication(
     getUserId(req),
@@ -41,6 +66,8 @@ const getMyRoleApplication = catchAsync(async (req, res) => {
 });
 
 export const ApplicationController = {
+  listApplicationsByAdmin,
+  updateApplicationStatus,
   createRoleApplication,
   getMyRoleApplication,
 };

@@ -6,16 +6,20 @@ import { StudentController } from "./student.controller.js";
 import {
   StudentCreateValidation,
   StudentSelfProfileValidation,
+  StudentListValidation,
   StudentUpdateValidation,
 } from "./student.validation.js";
 
 const router = Router();
 
 router.get(
-  "/me",
-  auth(Role.STUDENT),
-  StudentController.getMyStudentProfile,
+  "/",
+  auth(Role.ADMIN),
+  validateRequest(StudentListValidation, "query"),
+  StudentController.listStudentProfilesByAdmin,
 );
+
+router.get("/me", auth(Role.STUDENT), StudentController.getMyStudentProfile);
 router.post(
   "/me",
   auth(Role.STUDENT),

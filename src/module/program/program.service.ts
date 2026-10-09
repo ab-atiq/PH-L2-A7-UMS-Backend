@@ -80,11 +80,12 @@ const getSingleProgram = async (id: string) => {
   return item;
 };
 
-// all programs with deleted and inactive programs for admin
+// Admin management lists active records; individual details can still include deleted records.
 const programListByAdmin = async (query: ProgramListQuery) => {
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 20), 1), 100);
   const where = {
+    deletedAt: null,
     ...(query.search
       ? {
           OR: [

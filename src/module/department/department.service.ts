@@ -82,8 +82,9 @@ const getSingleDepartment = async (id: string) => {
 const departmentListByAdmin = async (query: DepartmentListQuery) => {
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 20), 1), 100);
-  // Admin can see all records, including those marked as deleted
+  // Keep soft-deleted records out of the active management list.
   const where = {
+    deletedAt: null,
     ...(query.search
       ? {
           OR: [
