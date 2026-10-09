@@ -44,4 +44,5 @@ export default {
   student_name: process.env.STUDENT_NAME!,
   student_email: process.env.STUDENT_EMAIL!,
   student_password: process.env.STUDENT_PASSWORD!,
+  seed_default_password: process.env.SEED_DEFAULT_PASSWORD!,
 };

@@ -1,17 +1,20 @@
 // ==========================================================
 // Exams / Results
+// Entered and updated by faculty only; students have
+// read-only access at the API layer, and never see a Result
+// until its status is PUBLISHED.
 // ==========================================================
 
 model Exam {
-  id         String     @id @default(uuid())
-  sectionId  String
-  section    Section    @relation(fields: [sectionId], references: [id])
-  examType   ExamType
-  title      String?
-  examDate   DateTime
-  totalMarks Float
-  weightage  Float?
-  status     ExamStatus @default(DRAFT)
+  id               String         @id @default(uuid())
+  semesterCourseId String
+  semesterCourse   SemesterCourse @relation(fields: [semesterCourseId], references: [id])
+  examType         ExamType
+  title            String?
+  examDate         DateTime
+  totalMarks       Float
+  weightage        Float?
+  status           ExamStatus     @default(DRAFT)
 
   results Result[]
 
@@ -19,26 +22,26 @@ model Exam {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@index([sectionId])
+  @@index([semesterCourseId])
   @@index([examDate])
   @@index([status])
   @@map("exams")
 }
 
 model Result {
-  id            String         @id @default(uuid())
-  examId        String
-  exam          Exam           @relation(fields: [examId], references: [id])
-  studentId     String
-  student       StudentProfile @relation(fields: [studentId], references: [id])
-  enrollmentId  String
-  enrollment    Enrollment     @relation(fields: [enrollmentId], references: [id])
-  marksObtained Float
-  grade         Grade?
-  gradePoint    Float?
-  status        ResultStatus   @default(DRAFT)
-  publishedAt   DateTime?
-  enteredById   String
+  id                 String           @id @default(uuid())
+  examId             String
+  exam               Exam             @relation(fields: [examId], references: [id])
+  studentId          String
+  student            StudentProfile   @relation(fields: [studentId], references: [id])
+  courseEnrollmentId String
+  courseEnrollment   CourseEnrollment @relation(fields: [courseEnrollmentId], references: [id])
+  marksObtained      Float
+  grade              Grade?
+  gradePoint         Float?
+  status             ResultStatus     @default(DRAFT)
+  publishedAt        DateTime?
+  enteredById        String
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

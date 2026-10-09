@@ -49,6 +49,23 @@ enum CourseStatus {
   ARCHIVED
 }
 
+// A program's degree level — drives how many ProgramSemesters it has.
+// BSC = 8 semesters, MSC = 4 semesters, PHD = 6 semesters.
+enum DegreeType {
+  BSC
+  MSC
+  PHD
+}
+
+// A student's progress through one ProgramSemester of their program.
+// Semester N (N > 1) can only move to IN_PROGRESS once semester N-1 is COMPLETED.
+enum StudentSemesterStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
 enum SemesterStatus {
   UPCOMING
   REGISTRATION_OPEN
@@ -115,6 +132,13 @@ enum Grade {
   W
 }
 
+// What a FeeInvoice is charging for: the one-time program admission fee,
+// or a recurring per-semester tuition fee.
+enum InvoiceType {
+  ADMISSION
+  SEMESTER
+}
+
 enum InvoiceStatus {
   PENDING
   PAID
@@ -166,4 +190,5 @@ enum AuditAction {
   CREATE_INVOICE
   UPDATE_PAYMENT_STATUS
   ADMIN_ACTION
+  ASSIGN_TEACHER
 }

@@ -3,16 +3,17 @@
 // ==========================================================
 
 model StudentProfile {
-  id                String      @id @default(uuid())
-  userId            String      @unique
-  user              User        @relation(fields: [userId], references: [id])
-  studentId         String      @unique
-  programId         String?
-  program           Program?    @relation(fields: [programId], references: [id])
-  departmentId      String?
-  department        Department? @relation(fields: [departmentId], references: [id])
-  currentSemesterId String?
-  currentSemester   Semester?   @relation(fields: [currentSemesterId], references: [id])
+  id                       String           @id @default(uuid())
+  userId                   String           @unique
+  user                     User             @relation(fields: [userId], references: [id])
+  studentId                String           @unique
+  programId                String?
+  program                  Program?         @relation(fields: [programId], references: [id])
+  departmentId             String?
+  department               Department?      @relation(fields: [departmentId], references: [id])
+  // Which semester (of their own program's curriculum) they are currently on.
+  currentProgramSemesterId String?
+  currentProgramSemester   ProgramSemester? @relation(fields: [currentProgramSemesterId], references: [id])
 
   batchYear     Int?
   gender        Gender?
@@ -22,11 +23,12 @@ model StudentProfile {
   guardianPhone String?
   admissionDate DateTime?
 
-  enrollments Enrollment[]
-  attendances Attendance[]
-  results     Result[]
-  feeInvoices FeeInvoice[]
-  payments    Payment[]
+  semesterEnrollments SemesterEnrollment[]
+  courseEnrollments   CourseEnrollment[]
+  attendances         Attendance[]
+  results             Result[]
+  feeInvoices         FeeInvoice[]
+  payments            Payment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -49,7 +51,8 @@ model FacultyProfile {
   specialization String?
   joinDate       DateTime?
 
-  sectionAssignments SectionFaculty[]
+  // Courses (within a specific program semester) this faculty member teaches.
+  semesterCourses SemesterCourse[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

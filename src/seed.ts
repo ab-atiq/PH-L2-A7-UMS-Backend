@@ -3,26 +3,48 @@
  * University Management System — Database Seed Script
  * ==========================================================
  *
- * Populates every table in the schema with realistic,
- * interconnected demo data so the full project can be
- * exercised end-to-end (auth, enrollment, attendance,
- * exams, results, GPA, invoices, payments, notifications,
+ * Populates every table in the redesigned schema with realistic,
+ * interconnected demo data so the full project can be exercised
+ * end-to-end (auth, curriculum, enrollment, attendance, exams,
+ * results, GPA, transcripts, invoices, payments, notifications,
  * audit logs).
  *
- * USAGE
- * -----
- * 1. Make sure DATABASE_URL is set and migrations are applied:
- *      npx prisma migrate dev
+ * ALIGNED WITH:
+ * - prisma/schema/*.prisma (multi-file schema)
+ * - schema_description.md
+ * - working_flows.md
+ * - University-Management-System.postman_collection.json
  *
- * 2. Run this script:
- *      npx ts-node prisma/seed.ts
- *    or wire it up in package.json:
- *      "prisma": { "seed": "ts-node prisma/seed.ts" }
- *    then run:
- *      npx prisma db seed
+ * KEY ARCHITECTURE HIGHLIGHTS:
+ * - No Section and no SectionFaculty (replaced by SemesterCourse).
+ * - Fixed Program Curriculum: Program -> ProgramSemester -> SemesterCourse.
+ * - Progression gated by semester completion (SemesterEnrollment.status).
+ * - Admission fee (InvoiceType.ADMISSION) + Per-semester fee (InvoiceType.SEMESTER).
  *
- * The script is idempotent — it wipes all rows (in FK-safe
- * order) before re-seeding, so it is safe to re-run.
+ * SEEDED DATA SUMMARY:
+ * - 3 Departments: CSE, EEE, BBA
+ * - 5 Programs: BSc-CSE (8 sem), BSc-EEE (8 sem), BBA-GEN (8 sem),
+ *               MSc-CSE (4 sem), PhD-CSE (6 sem)
+ * - 34 ProgramSemester slots across the 5 programs
+ * - 26 Courses placed across the 3 BSc programs (CSE has 2 doubled-up semesters)
+ * - 1 Admin: admin@university.edu
+ * - 5 Faculty: 2 CSE, 2 EEE, 1 BBA (assigned to SemesterCourses)
+ * - 20 Students:
+ *     * Admission fee paid in full
+ *     * Semester 1 COMPLETED (exams graded & published, GPA calculated, tuition paid)
+ *     * Semester 2 IN_PROGRESS (ongoing attendance, midterm scheduled/ungraded,
+ *       mixed invoice states: 12 paid, 1 failed payment attempt, 7 pending)
+ *     * 1 deliberately DROPPED course enrollment for edge-case testing
+ *
+ * CREDENTIALS:
+ * All accounts use password: Passw0rd!123
+ *
+ * USAGE:
+ *   npx prisma migrate dev
+ *   npx ts-node prisma/seed.ts (or npx ts-node seed.ts)
+ *
+ * The script is idempotent — it wipes all rows in FK-safe order
+ * before re-seeding.
  * ==========================================================
  */
 
@@ -31,6 +53,7 @@ import {
   AttendanceStatus,
   AuditAction,
   CourseStatus,
+  DegreeType,
   EnrollmentStatus,
   EntityStatus,
   ExamStatus,
@@ -38,29 +61,27 @@ import {
   Gender,
   Grade,
   InvoiceStatus,
+  InvoiceType,
   NotificationType,
   PaymentGateway,
   PaymentStatus,
   ResultStatus,
   Role,
-  SectionStatus,
-  SemesterStatus,
+  StudentSemesterStatus,
   UserStatus,
 } from "../generated/prisma/client.js";
 import config from "./config/index.js";
 import { prisma } from "./lib/prisma.js";
 
-// use same prisma client in src/lib/prisma.ts and src/seed.ts to avoid multiple instances
-// import { PrismaPg } from "@prisma/adapter-pg";
-// import "dotenv/config";
-// const connectionString = `${process.env.DATABASE_URL}`;
-// const adapter = new PrismaPg({ connectionString });
-// const prisma = new PrismaClient({ adapter });
+// Password & Hashing Configuration
+const DEFAULT_PASSWORD = config.seed_default_password;
+const SALT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;
 
-const SALT_ROUNDS = Number(config.bcrypt_salt_rounds);
+const ADMIN_EMAIL = config.admin_email;
+const ADMIN_NAME = config.admin_name;
 
 // ----------------------------------------------------------
-// Small helpers
+// Helpers
 // ----------------------------------------------------------
 
 function hashPassword(plain: string): Promise<string> {
@@ -71,11 +92,15 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function pick<T>(arr: T[]): T {
+function pick<T>(arr: readonly T[] | T[]): T {
   return arr[randomInt(0, arr.length - 1)]!;
 }
 
-/** Marks are assumed to be on a 0–100 combined scale. */
+function slug(first: string, last: string): string {
+  return `${first}.${last}`.toLowerCase().replace(/\s+/g, "");
+}
+
+/** Converts a 0–100 total mark to letter grade and grade points */
 function gradeFromPercentage(pct: number): { grade: Grade; point: number } {
   if (pct >= 90) return { grade: Grade.A_PLUS, point: 4.0 };
   if (pct >= 85) return { grade: Grade.A, point: 3.75 };
@@ -90,12 +115,8 @@ function gradeFromPercentage(pct: number): { grade: Grade; point: number } {
   return { grade: Grade.F, point: 0.0 };
 }
 
-function slug(first: string, last: string): string {
-  return `${first}.${last}`.toLowerCase().replace(/\s+/g, "");
-}
-
 // ----------------------------------------------------------
-// Static reference data
+// Static Reference Data
 // ----------------------------------------------------------
 
 const DEPARTMENTS = [
@@ -109,26 +130,62 @@ const PROGRAMS = [
     code: "BSC-CSE",
     name: "B.Sc. in Computer Science & Engineering",
     deptCode: "CSE",
+    degreeType: DegreeType.BSC,
+    totalSemesters: 8,
     durationYears: 4,
     totalCredits: 140,
+    admissionFee: 5000,
+    semesterFee: 50000,
   },
   {
     code: "BSC-EEE",
     name: "B.Sc. in Electrical & Electronic Engineering",
     deptCode: "EEE",
+    degreeType: DegreeType.BSC,
+    totalSemesters: 8,
     durationYears: 4,
     totalCredits: 136,
+    admissionFee: 4000,
+    semesterFee: 50000,
   },
   {
     code: "BBA-GEN",
     name: "Bachelor of Business Administration",
     deptCode: "BBA",
+    degreeType: DegreeType.BSC,
+    totalSemesters: 8,
     durationYears: 4,
     totalCredits: 124,
+    admissionFee: 4000,
+    semesterFee: 50000,
+  },
+  {
+    code: "MSC-CSE",
+    name: "M.Sc. in Computer Science & Engineering",
+    deptCode: "CSE",
+    degreeType: DegreeType.MSC,
+    totalSemesters: 4,
+    durationYears: 2,
+    totalCredits: 36,
+    admissionFee: 6000,
+    semesterFee: 50000,
+  },
+  {
+    code: "PHD-CSE",
+    name: "Ph.D. in Computer Science & Engineering",
+    deptCode: "CSE",
+    degreeType: DegreeType.PHD,
+    totalSemesters: 6,
+    durationYears: 3,
+    totalCredits: 54,
+    admissionFee: 8000,
+    semesterFee: 50000,
   },
 ] as const;
 
+// 26 Courses across the BSc programs
 const COURSES = [
+  // CSE Courses (10 total: 2 doubled-up semesters in Sem 1 and Sem 2)
   {
     code: "CSE101",
     title: "Introduction to Programming",
@@ -140,86 +197,52 @@ const COURSES = [
     title: "Structured Programming",
     credits: 3,
     deptCode: "CSE",
-    prereq: "CSE101",
   },
-  {
-    code: "CSE201",
-    title: "Data Structures",
-    credits: 3,
-    deptCode: "CSE",
-    prereq: "CSE102",
-  },
-  {
-    code: "CSE202",
-    title: "Algorithms",
-    credits: 3,
-    deptCode: "CSE",
-    prereq: "CSE201",
-  },
+  { code: "CSE201", title: "Data Structures", credits: 3, deptCode: "CSE" },
   {
     code: "CSE203",
     title: "Discrete Mathematics",
     credits: 3,
     deptCode: "CSE",
   },
+  { code: "CSE202", title: "Algorithms", credits: 3, deptCode: "CSE" },
   {
     code: "CSE204",
     title: "Digital Logic Design",
     credits: 3,
     deptCode: "CSE",
   },
-  {
-    code: "CSE301",
-    title: "Database Systems",
-    credits: 3,
-    deptCode: "CSE",
-    prereq: "CSE201",
-  },
-  {
-    code: "CSE302",
-    title: "Operating Systems",
-    credits: 3,
-    deptCode: "CSE",
-    prereq: "CSE201",
-  },
+  { code: "CSE301", title: "Database Systems", credits: 3, deptCode: "CSE" },
+  { code: "CSE302", title: "Operating Systems", credits: 3, deptCode: "CSE" },
   { code: "CSE303", title: "Computer Networks", credits: 3, deptCode: "CSE" },
   {
     code: "CSE401",
     title: "Software Engineering",
     credits: 3,
     deptCode: "CSE",
-    prereq: "CSE301",
   },
+
+  // EEE Courses (8 total: 1 per semester across 8 semesters)
   { code: "EEE101", title: "Circuit Analysis I", credits: 3, deptCode: "EEE" },
-  {
-    code: "EEE102",
-    title: "Circuit Analysis II",
-    credits: 3,
-    deptCode: "EEE",
-    prereq: "EEE101",
-  },
-  {
-    code: "EEE201",
-    title: "Electronics I",
-    credits: 3,
-    deptCode: "EEE",
-    prereq: "EEE102",
-  },
+  { code: "EEE102", title: "Circuit Analysis II", credits: 3, deptCode: "EEE" },
+  { code: "EEE201", title: "Electronics I", credits: 3, deptCode: "EEE" },
   { code: "EEE202", title: "Digital Electronics", credits: 3, deptCode: "EEE" },
   {
     code: "EEE301",
     title: "Electrical Machines I",
     credits: 3,
     deptCode: "EEE",
-    prereq: "EEE201",
   },
+  { code: "EEE302", title: "Power Systems", credits: 3, deptCode: "EEE" },
+  { code: "EEE401", title: "Control Systems", credits: 3, deptCode: "EEE" },
   {
-    code: "EEE302",
-    title: "Power Systems",
+    code: "EEE402",
+    title: "Telecommunication Engineering",
     credits: 3,
     deptCode: "EEE",
-    prereq: "EEE301",
   },
+
+  // BBA Courses (8 total: 1 per semester across 8 semesters)
   {
     code: "BBA101",
     title: "Principles of Management",
@@ -237,10 +260,71 @@ const COURSES = [
     title: "Marketing Management",
     credits: 3,
     deptCode: "BBA",
-    prereq: "BBA101",
   },
   { code: "BBA202", title: "Business Statistics", credits: 3, deptCode: "BBA" },
+  { code: "BBA301", title: "Corporate Finance", credits: 3, deptCode: "BBA" },
+  {
+    code: "BBA302",
+    title: "Human Resource Management",
+    credits: 3,
+    deptCode: "BBA",
+  },
+  {
+    code: "BBA401",
+    title: "Strategic Management",
+    credits: 3,
+    deptCode: "BBA",
+  },
+  {
+    code: "BBA402",
+    title: "International Business",
+    credits: 3,
+    deptCode: "BBA",
+  },
 ] as const;
+
+// Curriculum mapping: Program Code -> Semester Number -> Array of { courseCode, teacherEmpId }
+const CURRICULUM_DISTRIBUTION: Record<
+  string,
+  Record<number, { courseCode: string; teacherEmpId: string }[]>
+> = {
+  "BSC-CSE": {
+    1: [
+      { courseCode: "CSE101", teacherEmpId: "EMP001" },
+      { courseCode: "CSE102", teacherEmpId: "EMP002" },
+    ],
+    2: [
+      { courseCode: "CSE201", teacherEmpId: "EMP001" },
+      { courseCode: "CSE203", teacherEmpId: "EMP002" },
+    ],
+    3: [{ courseCode: "CSE202", teacherEmpId: "EMP001" }],
+    4: [{ courseCode: "CSE204", teacherEmpId: "EMP002" }],
+    5: [{ courseCode: "CSE301", teacherEmpId: "EMP001" }],
+    6: [{ courseCode: "CSE302", teacherEmpId: "EMP002" }],
+    7: [{ courseCode: "CSE303", teacherEmpId: "EMP001" }],
+    8: [{ courseCode: "CSE401", teacherEmpId: "EMP002" }],
+  },
+  "BSC-EEE": {
+    1: [{ courseCode: "EEE101", teacherEmpId: "EMP003" }],
+    2: [{ courseCode: "EEE102", teacherEmpId: "EMP004" }],
+    3: [{ courseCode: "EEE201", teacherEmpId: "EMP003" }],
+    4: [{ courseCode: "EEE202", teacherEmpId: "EMP004" }],
+    5: [{ courseCode: "EEE301", teacherEmpId: "EMP003" }],
+    6: [{ courseCode: "EEE302", teacherEmpId: "EMP004" }],
+    7: [{ courseCode: "EEE401", teacherEmpId: "EMP003" }],
+    8: [{ courseCode: "EEE402", teacherEmpId: "EMP004" }],
+  },
+  "BBA-GEN": {
+    1: [{ courseCode: "BBA101", teacherEmpId: "EMP005" }],
+    2: [{ courseCode: "BBA102", teacherEmpId: "EMP005" }],
+    3: [{ courseCode: "BBA201", teacherEmpId: "EMP005" }],
+    4: [{ courseCode: "BBA202", teacherEmpId: "EMP005" }],
+    5: [{ courseCode: "BBA301", teacherEmpId: "EMP005" }],
+    6: [{ courseCode: "BBA302", teacherEmpId: "EMP005" }],
+    7: [{ courseCode: "BBA401", teacherEmpId: "EMP005" }],
+    8: [{ courseCode: "BBA402", teacherEmpId: "EMP005" }],
+  },
+};
 
 const FACULTY = [
   {
@@ -249,6 +333,7 @@ const FACULTY = [
     last: "Uddin",
     deptCode: "CSE",
     designation: "Associate Professor",
+    specialization: "Software Architecture & Algorithms",
   },
   {
     empId: "EMP002",
@@ -256,6 +341,7 @@ const FACULTY = [
     last: "Khatun",
     deptCode: "CSE",
     designation: "Assistant Professor",
+    specialization: "Data Systems & Machine Intelligence",
   },
   {
     empId: "EMP003",
@@ -263,6 +349,7 @@ const FACULTY = [
     last: "Hossain",
     deptCode: "EEE",
     designation: "Professor",
+    specialization: "Power Systems & Energy",
   },
   {
     empId: "EMP004",
@@ -270,6 +357,7 @@ const FACULTY = [
     last: "Akter",
     deptCode: "EEE",
     designation: "Assistant Professor",
+    specialization: "Electronics & Embedded Systems",
   },
   {
     empId: "EMP005",
@@ -277,6 +365,7 @@ const FACULTY = [
     last: "Islam",
     deptCode: "BBA",
     designation: "Associate Professor",
+    specialization: "Strategic Finance & Organizational Management",
   },
 ] as const;
 
@@ -303,245 +392,208 @@ const STUDENT_NAMES = [
   ["Rehana", "Parvin"],
 ] as const;
 
-// Cycle CSE / EEE / BBA across the 20 students
-const DEPT_CYCLE = ["CSE", "EEE", "BBA"] as const;
-
-// Program per department (index-aligned with DEPARTMENTS/PROGRAMS)
-const PROGRAM_BY_DEPT: Record<string, string> = {
-  CSE: "BSC-CSE",
-  EEE: "BSC-EEE",
-  BBA: "BBA-GEN",
-};
-
-// Sections offered in the completed semester (intro-level courses)
-const COMPLETED_SEMESTER_SECTIONS = [
-  {
-    courseCode: "CSE101",
-    facultyEmpId: "EMP001",
-    room: "CSE-101",
-    capacity: 40,
-  },
-  {
-    courseCode: "CSE102",
-    facultyEmpId: "EMP002",
-    room: "CSE-102",
-    capacity: 40,
-  },
-  {
-    courseCode: "EEE101",
-    facultyEmpId: "EMP003",
-    room: "EEE-101",
-    capacity: 40,
-  },
-  {
-    courseCode: "BBA101",
-    facultyEmpId: "EMP005",
-    room: "BBA-101",
-    capacity: 40,
-  },
-  {
-    courseCode: "BBA102",
-    facultyEmpId: "EMP005",
-    room: "BBA-102",
-    capacity: 40,
-  },
-] as const;
-
-// Sections offered in the current (in-progress) semester
-const CURRENT_SEMESTER_SECTIONS = [
-  {
-    courseCode: "CSE201",
-    facultyEmpId: "EMP001",
-    room: "CSE-201",
-    capacity: 35,
-  },
-  {
-    courseCode: "CSE203",
-    facultyEmpId: "EMP002",
-    room: "CSE-203",
-    capacity: 35,
-  },
-  {
-    courseCode: "CSE301",
-    facultyEmpId: "EMP001",
-    room: "CSE-301",
-    capacity: 30,
-  },
-  {
-    courseCode: "EEE102",
-    facultyEmpId: "EMP003",
-    room: "EEE-102",
-    capacity: 35,
-  },
-  {
-    courseCode: "EEE201",
-    facultyEmpId: "EMP004",
-    room: "EEE-201",
-    capacity: 30,
-  },
-  {
-    courseCode: "BBA201",
-    facultyEmpId: "EMP005",
-    room: "BBA-201",
-    capacity: 35,
-  },
-] as const;
+const STUDENT_PROGRAM_CYCLE = ["BSC-CSE", "BSC-EEE", "BBA-GEN"] as const;
 
 // ----------------------------------------------------------
-// Reset (FK-safe deletion order — children before parents)
+// Database Reset (FK-Safe Deletion Order)
 // ----------------------------------------------------------
 
 async function resetDatabase() {
-  console.log("Resetting database...");
+  console.log("Cleaning existing database records (FK-safe order)...");
   await prisma.auditLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.payment.deleteMany();
-  await prisma.feeInvoice.deleteMany();
   await prisma.result.deleteMany();
   await prisma.exam.deleteMany();
   await prisma.attendance.deleteMany();
-  await prisma.enrollment.deleteMany();
-  await prisma.sectionFaculty.deleteMany();
-  await prisma.section.deleteMany();
-  await prisma.refreshToken.deleteMany();
+  await prisma.courseEnrollment.deleteMany();
+  await prisma.feeInvoice.deleteMany();
+  await prisma.semesterEnrollment.deleteMany();
   await prisma.studentProfile.deleteMany();
-  await prisma.facultyProfile.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.coursePrerequisite.deleteMany();
+  await prisma.semesterCourse.deleteMany();
+  await prisma.programSemester.deleteMany();
   await prisma.course.deleteMany();
-  await prisma.semester.deleteMany();
   await prisma.program.deleteMany();
+  await prisma.facultyProfile.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.user.deleteMany();
   await prisma.department.deleteMany();
   console.log("Database reset complete.");
 }
 
 // ----------------------------------------------------------
-// Main seed routine
+// Main Seed Function
 // ----------------------------------------------------------
 
 async function main() {
+  const startTime = Date.now();
   await resetDatabase();
 
-  // --- Departments -----------------------------------------------------
-  const departmentByCode: Record<string, { id: string }> = {};
+  const defaultPasswordHash = await hashPassword(DEFAULT_PASSWORD);
+
+  let auditCount = 0;
+  async function logAudit(
+    actorId: string | null,
+    action: AuditAction,
+    entity: string,
+    entityId?: string | null,
+    metadata?: object,
+  ) {
+    await prisma.auditLog.create({
+      data: {
+        actorId,
+        action,
+        entity,
+        entityId: entityId || null,
+        metadata: metadata ? (metadata as any) : undefined,
+      },
+    });
+    auditCount++;
+  }
+
+  // ==========================================================
+  // 1. Academic Structure: Departments
+  // ==========================================================
+  console.log("\nSeeding Departments...");
+  const deptMap: Record<string, { id: string; code: string; name: string }> =
+    {};
   for (const d of DEPARTMENTS) {
     const dept = await prisma.department.create({
       data: {
-        name: d.name,
         code: d.code,
+        name: d.name,
         description: `Department of ${d.name}`,
         status: EntityStatus.ACTIVE,
       },
     });
-    departmentByCode[d.code] = dept;
+    deptMap[d.code] = dept;
   }
-  console.log(`Created ${DEPARTMENTS.length} departments.`);
+  console.log(
+    `Created ${Object.keys(deptMap).length} departments (CSE, EEE, BBA).`,
+  );
 
-  // --- Programs ----------------------------------------------------------
-  const programByCode: Record<string, { id: string }> = {};
+  // ==========================================================
+  // 2. Academic Structure: Programs & ProgramSemesters
+  // ==========================================================
+  console.log("\nSeeding Programs & ProgramSemester slots...");
+  const programMap: Record<
+    string,
+    { id: string; code: string; admissionFee: number; semesterFee: number }
+  > = {};
+  const programSemestersMap: Record<
+    string,
+    Record<number, { id: string; semesterNumber: number }>
+  > = {};
+
+  let totalSemestersCreated = 0;
+
   for (const p of PROGRAMS) {
-    const program = await prisma.program.create({
+    const prog = await prisma.program.create({
       data: {
-        name: p.name,
         code: p.code,
-        departmentId: departmentByCode[p.deptCode]!.id,
+        name: p.name,
+        departmentId: deptMap[p.deptCode]!.id,
+        degreeType: p.degreeType,
+        totalSemesters: p.totalSemesters,
         durationYears: p.durationYears,
         totalCredits: p.totalCredits,
+        admissionFee: p.admissionFee,
+        semesterFee: p.semesterFee,
         status: EntityStatus.ACTIVE,
       },
     });
-    programByCode[p.code] = program;
-  }
-  console.log(`Created ${PROGRAMS.length} programs.`);
 
-  // --- Courses -------------------------------------------------------------
-  const courseByCode: Record<
+    programMap[p.code] = {
+      id: prog.id,
+      code: prog.code,
+      admissionFee: Number(p.admissionFee),
+      semesterFee: Number(p.semesterFee),
+    };
+
+    programSemestersMap[p.code] = {};
+
+    // Auto-generate ProgramSemester slots (BSC: 8, MSC: 4, PHD: 6)
+    for (let sem = 1; sem <= p.totalSemesters; sem++) {
+      const ps = await prisma.programSemester.create({
+        data: {
+          programId: prog.id,
+          semesterNumber: sem,
+          name: `Semester ${sem}`,
+          status: EntityStatus.ACTIVE,
+        },
+      });
+      programSemestersMap[p.code]![sem] = { id: ps.id, semesterNumber: sem };
+      totalSemestersCreated++;
+    }
+  }
+  console.log(
+    `Created ${Object.keys(programMap).length} programs and ${totalSemestersCreated} ProgramSemester rows (8+8+8+4+6 = 34).`,
+  );
+
+  // ==========================================================
+  // 3. Courses Catalog (26 courses)
+  // ==========================================================
+  console.log("\nSeeding Course Catalog (26 courses)...");
+  const courseMap: Record<
     string,
-    { id: string; credits: number; deptCode: string }
+    { id: string; courseCode: string; title: string; credits: number }
   > = {};
   for (const c of COURSES) {
     const course = await prisma.course.create({
       data: {
         courseCode: c.code,
         title: c.title,
-        description: `${c.title} — core course offered by the ${departmentByCode[c.deptCode] ? c.deptCode : ""} department.`,
         credits: c.credits,
-        departmentId: departmentByCode[c.deptCode]!.id,
+        description: `${c.title} — Offered by Department of ${c.deptCode}.`,
+        departmentId: deptMap[c.deptCode]!.id,
         status: CourseStatus.PUBLISHED,
       },
     });
-    courseByCode[c.code] = {
+    courseMap[c.code] = {
       id: course.id,
-      credits: c.credits,
-      deptCode: c.deptCode,
+      courseCode: course.courseCode,
+      title: course.title,
+      credits: course.credits,
     };
   }
-  console.log(`Created ${COURSES.length} courses.`);
+  console.log(`Created ${Object.keys(courseMap).length} courses.`);
 
-  // --- Course prerequisites -------------------------------------------------
-  let prereqCount = 0;
-  for (const c of COURSES) {
-    if ("prereq" in c && c.prereq) {
-      await prisma.coursePrerequisite.create({
-        data: {
-          courseId: courseByCode[c.code]!.id,
-          prerequisiteId: courseByCode[c.prereq]!.id,
-        },
-      });
-      prereqCount++;
-    }
-  }
-  console.log(`Created ${prereqCount} course prerequisites.`);
-
-  // --- Semesters -------------------------------------------------------------
-  const completedSemester = await prisma.semester.create({
-    data: {
-      name: "Spring 2026",
-      startDate: new Date("2026-01-10"),
-      endDate: new Date("2026-05-15"),
-      registrationStart: new Date("2025-12-01"),
-      registrationEnd: new Date("2026-01-05"),
-      status: SemesterStatus.COMPLETED,
-    },
-  });
-  const currentSemester = await prisma.semester.create({
-    data: {
-      name: "Fall 2026",
-      startDate: new Date("2026-09-01"),
-      endDate: new Date("2026-12-20"),
-      registrationStart: new Date("2026-08-01"),
-      registrationEnd: new Date("2026-08-25"),
-      status: SemesterStatus.CURRENT,
-    },
-  });
-  console.log("Created 2 semesters (1 completed, 1 current).");
-
-  // --- Admin user ----------------------------------------------------------
-  let passwordHash = await hashPassword(config.admin_password);
+  // ==========================================================
+  // 4. Admin Account
+  // ==========================================================
+  console.log("\nSeeding Admin Account...");
   const adminUser = await prisma.user.create({
     data: {
-      email: config.admin_email,
-      passwordHash,
+      email: ADMIN_EMAIL,
+      passwordHash: defaultPasswordHash,
       role: Role.ADMIN,
       status: UserStatus.ACTIVE,
-      firstName: config.admin_name,
-      lastName: config.admin_name,
+      firstName: ADMIN_NAME.split(" ")[0] || "System",
+      lastName: ADMIN_NAME.split(" ")[1] || "Admin",
       emailVerified: true,
       lastLoginAt: new Date(),
     },
   });
-  console.log("Created 1 admin user.");
+  await logAudit(adminUser.id, AuditAction.LOGIN, "User", adminUser.id, {
+    source: "seed",
+  });
+  console.log(`Created Admin user: ${adminUser.email}`);
 
-  // --- Faculty (User + FacultyProfile) --------------------------------------
-  passwordHash = await hashPassword(config.faculty_password);
-  const facultyByEmpId: Record<string, { userId: string; profileId: string }> =
-    {};
+  // ==========================================================
+  // 5. Faculty Accounts & Curriculum Placements (SemesterCourse)
+  // ==========================================================
+  console.log("\nSeeding Faculty & assigning SemesterCourse curriculum...");
+  const facultyMap: Record<
+    string,
+    { userId: string; profileId: string; empId: string }
+  > = {};
+
   for (const f of FACULTY) {
     const email = `${slug(f.first, f.last)}@university.edu`;
     const user = await prisma.user.create({
       data: {
         email,
-        passwordHash,
+        passwordHash: defaultPasswordHash,
         role: Role.FACULTY,
         status: UserStatus.ACTIVE,
         firstName: f.first,
@@ -550,643 +602,777 @@ async function main() {
         lastLoginAt: new Date(),
       },
     });
+
     const profile = await prisma.facultyProfile.create({
       data: {
         userId: user.id,
         employeeId: f.empId,
-        departmentId: departmentByCode[f.deptCode]!.id,
+        departmentId: deptMap[f.deptCode]!.id,
         designation: f.designation,
-        specialization: `${f.deptCode} Systems`,
-        joinDate: new Date("2019-08-01"),
+        specialization: f.specialization,
+        joinDate: new Date("2020-01-15"),
       },
     });
-    facultyByEmpId[f.empId] = { userId: user.id, profileId: profile.id };
-  }
-  console.log(`Created ${FACULTY.length} faculty accounts.`);
 
-  // --- Students (User + StudentProfile) -------------------------------------
-  const students: {
-    userId: string;
-    profileId: string;
-    deptCode: string;
-    studentId: string;
-  }[] = [];
+    facultyMap[f.empId] = {
+      userId: user.id,
+      profileId: profile.id,
+      empId: f.empId,
+    };
+
+    await logAudit(user.id, AuditAction.LOGIN, "User", user.id, {
+      source: "seed",
+    });
+  }
+  console.log(`Created ${Object.keys(facultyMap).length} faculty accounts.`);
+
+  // Place courses into curriculum via SemesterCourse
+  // Key: `${progCode}_S${semNum}_${courseCode}` -> SemesterCourse record
+  const semesterCourseMap: Record<
+    string,
+    {
+      id: string;
+      programCode: string;
+      semesterNumber: number;
+      courseCode: string;
+      teacherId: string;
+    }
+  > = {};
+
+  let semesterCoursesCount = 0;
+  for (const [progCode, semesters] of Object.entries(CURRICULUM_DISTRIBUTION)) {
+    for (const [semNumStr, coursePlacements] of Object.entries(semesters)) {
+      const semNum = Number(semNumStr);
+      const programSemester = programSemestersMap[progCode]![semNum]!;
+
+      for (const placement of coursePlacements) {
+        const course = courseMap[placement.courseCode]!;
+        const faculty = facultyMap[placement.teacherEmpId]!;
+
+        const semCourse = await prisma.semesterCourse.create({
+          data: {
+            programSemesterId: programSemester.id,
+            courseId: course.id,
+            teacherId: faculty.profileId,
+            status: EntityStatus.ACTIVE,
+          },
+        });
+
+        const key = `${progCode}_S${semNum}_${placement.courseCode}`;
+        semesterCourseMap[key] = {
+          id: semCourse.id,
+          programCode: progCode,
+          semesterNumber: semNum,
+          courseCode: placement.courseCode,
+          teacherId: faculty.profileId,
+        };
+        semesterCoursesCount++;
+
+        // Notify faculty about assigned curriculum slot
+        await prisma.notification.create({
+          data: {
+            userId: faculty.userId,
+            type: NotificationType.ACADEMIC,
+            title: "Curriculum Course Assigned",
+            message: `You are assigned to teach ${course.courseCode} (${course.title}) in ${progCode} Semester ${semNum}.`,
+          },
+        });
+
+        await logAudit(
+          adminUser.id,
+          AuditAction.ASSIGN_TEACHER,
+          "SemesterCourse",
+          semCourse.id,
+          {
+            program: progCode,
+            semester: semNum,
+            course: course.courseCode,
+            teacher: placement.teacherEmpId,
+          },
+        );
+      }
+    }
+  }
+  console.log(
+    `Placed ${semesterCoursesCount} SemesterCourse records with assigned teachers.`,
+  );
+
+  // ==========================================================
+  // 6. Pre-create Exams for Semester 1 & Semester 2 Courses
+  // ==========================================================
+  console.log(
+    "\nSetting up Exams for Semester 1 (completed) and Semester 2 (ongoing)...",
+  );
+
+  // sem1ExamsMap[semCourseKey] = { midterm: Exam, final: Exam }
+  const sem1ExamsMap: Record<
+    string,
+    { midterm: { id: string }; final: { id: string } }
+  > = {};
+  // sem2ExamsMap[semCourseKey] = { midterm: Exam, final: Exam }
+  const sem2ExamsMap: Record<
+    string,
+    { midterm: { id: string }; final: { id: string } }
+  > = {};
+
+  let examCount = 0;
+
+  for (const [key, sc] of Object.entries(semesterCourseMap)) {
+    const course = courseMap[sc.courseCode]!;
+
+    if (sc.semesterNumber === 1) {
+      // Semester 1: Both Midterm and Final completed
+      const midterm = await prisma.exam.create({
+        data: {
+          semesterCourseId: sc.id,
+          examType: ExamType.MIDTERM,
+          title: `${course.courseCode} Midterm Examination`,
+          examDate: new Date("2026-03-05"),
+          totalMarks: 30,
+          weightage: 40,
+          status: ExamStatus.COMPLETED,
+        },
+      });
+
+      const final = await prisma.exam.create({
+        data: {
+          semesterCourseId: sc.id,
+          examType: ExamType.FINAL,
+          title: `${course.courseCode} Final Examination`,
+          examDate: new Date("2026-05-15"),
+          totalMarks: 70,
+          weightage: 60,
+          status: ExamStatus.COMPLETED,
+        },
+      });
+
+      sem1ExamsMap[key] = { midterm, final };
+      examCount += 2;
+    } else if (sc.semesterNumber === 2) {
+      // Semester 2: Midterm scheduled/published (ungraded), Final draft
+      const midterm = await prisma.exam.create({
+        data: {
+          semesterCourseId: sc.id,
+          examType: ExamType.MIDTERM,
+          title: `${course.courseCode} Midterm Examination`,
+          examDate: new Date("2026-10-25"),
+          totalMarks: 30,
+          weightage: 40,
+          status: ExamStatus.PUBLISHED,
+        },
+      });
+
+      const final = await prisma.exam.create({
+        data: {
+          semesterCourseId: sc.id,
+          examType: ExamType.FINAL,
+          title: `${course.courseCode} Final Examination`,
+          examDate: new Date("2026-12-15"),
+          totalMarks: 70,
+          weightage: 60,
+          status: ExamStatus.DRAFT,
+        },
+      });
+
+      sem2ExamsMap[key] = { midterm, final };
+      examCount += 2;
+    }
+  }
+  console.log(`Created ${examCount} exams across Semesters 1 and 2.`);
+
+  // ==========================================================
+  // 7. Seed Students & Full Lifecycle Flows
+  // ==========================================================
+  console.log(
+    "\nSeeding 20 Students with Admission, Semester 1 (completed), and Semester 2 (in progress)...",
+  );
+
+  let invoiceCounter = 1;
+  let paymentCounter = 1;
+
+  let semEnrollmentCount = 0;
+  let courseEnrollmentCount = 0;
+  let attendanceCount = 0;
+  let resultCount = 0;
+  let invoiceCount = 0;
+  let paymentCount = 0;
+
   for (let i = 0; i < STUDENT_NAMES.length; i++) {
     const [first, last] = STUDENT_NAMES[i]!;
-    const deptCode = DEPT_CYCLE[i % DEPT_CYCLE.length]!;
+    const progCode = STUDENT_PROGRAM_CYCLE[i % STUDENT_PROGRAM_CYCLE.length]!;
+    const program = programMap[progCode]!;
+    const deptCode = PROGRAMS.find((p) => p.code === progCode)!.deptCode;
+    const department = deptMap[deptCode]!;
     const studentId = `STU2026${String(i + 1).padStart(3, "0")}`;
     const email = `${slug(first, last)}@student.university.edu`;
 
-    passwordHash = await hashPassword(config.student_password);
+    // 7.1 User Account
     const user = await prisma.user.create({
       data: {
         email,
-        passwordHash,
+        passwordHash: defaultPasswordHash,
         role: Role.STUDENT,
         status: UserStatus.ACTIVE,
         firstName: first,
         lastName: last,
+        phone: `+88017${String(randomInt(10000000, 99999999))}`,
         emailVerified: true,
-        lastLoginAt: new Date(),
+        lastLoginAt: new Date("2026-09-01"),
       },
     });
 
+    // 7.2 StudentProfile (points to currentProgramSemester = Semester 2)
+    const sem2ProgramSemester = programSemestersMap[progCode]![2]!;
     const profile = await prisma.studentProfile.create({
       data: {
         userId: user.id,
         studentId,
-        programId: programByCode[PROGRAM_BY_DEPT[deptCode]!]!.id,
-        departmentId: departmentByCode[deptCode]!.id,
-        currentSemesterId: currentSemester.id,
+        programId: program.id,
+        departmentId: department.id,
+        currentProgramSemesterId: sem2ProgramSemester.id,
         batchYear: 2026,
         gender: i % 2 === 0 ? Gender.MALE : Gender.FEMALE,
-        dateOfBirth: new Date(2003, i % 12, (i % 27) + 1),
-        address: `House ${10 + i}, Road ${1 + (i % 8)}, Rajshahi, Bangladesh`,
+        dateOfBirth: new Date(2003, i % 12, (i % 25) + 1),
+        address: `House ${12 + i}, Road ${1 + (i % 7)}, Rajshahi, Bangladesh`,
         guardianName: `Guardian of ${first} ${last}`,
-        guardianPhone: `+8801${randomInt(700000000, 799999999)}`,
-        admissionDate: new Date("2026-01-10"),
+        guardianPhone: `+88018${String(randomInt(10000000, 99999999))}`,
+        admissionDate: new Date("2026-01-05"),
       },
     });
 
-    students.push({
-      userId: user.id,
-      profileId: profile.id,
-      deptCode,
-      studentId,
-    });
-
+    // Welcome Notification
     await prisma.notification.create({
       data: {
         userId: user.id,
         type: NotificationType.INFO,
-        title: "Welcome to the University Portal",
-        message: `Hi ${first}, your student account (${studentId}) has been created successfully.`,
+        title: "Welcome to University Portal",
+        message: `Welcome ${first}! Your student profile (${studentId}) has been registered for ${progCode}.`,
       },
     });
-  }
-  console.log(`Created ${students.length} student accounts.`);
 
-  // --- Sections + faculty assignment (completed semester) --------------------
-  const completedSections: {
-    id: string;
-    courseCode: string;
-    deptCode: string;
-    credits: number;
-  }[] = [];
-  for (const s of COMPLETED_SEMESTER_SECTIONS) {
-    const course = courseByCode[s.courseCode];
-    const section = await prisma.section.create({
+    // --------------------------------------------------------
+    // 7.3 Admission Fee (One-Time: InvoiceType.ADMISSION)
+    // --------------------------------------------------------
+    const admInvoiceNumber = `INV-ADM-${String(invoiceCounter++).padStart(4, "0")}`;
+    const admInvoice = await prisma.feeInvoice.create({
       data: {
-        courseId: course!.id,
-        semesterId: completedSemester.id,
-        sectionName: "A",
-        capacity: s.capacity,
-        room: s.room,
-        schedule: {
-          days: ["Sunday", "Tuesday"],
-          startTime: "09:00",
-          endTime: "10:30",
-        },
-        status: SectionStatus.CLOSED,
+        invoiceNumber: admInvoiceNumber,
+        studentId: profile.id,
+        type: InvoiceType.ADMISSION,
+        programId: program.id,
+        description: `Admission Fee — ${progCode}`,
+        amount: program.admissionFee,
+        dueDate: new Date("2026-01-10"),
+        status: InvoiceStatus.PAID,
       },
     });
-    await prisma.sectionFaculty.create({
+    invoiceCount++;
+
+    const admPayment = await prisma.payment.create({
       data: {
-        sectionId: section.id,
-        facultyId: facultyByEmpId[s.facultyEmpId]!.profileId,
-        isPrimary: true,
+        transactionId: `TXN-ADM-${String(paymentCounter++).padStart(4, "0")}`,
+        invoiceId: admInvoice.id,
+        studentId: profile.id,
+        amount: program.admissionFee,
+        gateway: pick([
+          PaymentGateway.STRIPE,
+          PaymentGateway.BKASH,
+          PaymentGateway.SSLCOMMERZ,
+        ]),
+        status: PaymentStatus.SUCCESS,
+        gatewayReference: `ref_adm_${Math.random().toString(36).slice(2, 10)}`,
+        paidAt: new Date("2026-01-07"),
       },
     });
-    completedSections.push({
-      id: section.id,
-      courseCode: s.courseCode,
-      deptCode: course!.deptCode,
-      credits: course!.credits,
-    });
-  }
+    paymentCount++;
 
-  // --- Sections + faculty assignment (current semester) -----------------------
-  const currentSections: {
-    id: string;
-    courseCode: string;
-    deptCode: string;
-    credits: number;
-  }[] = [];
-  for (const s of CURRENT_SEMESTER_SECTIONS) {
-    const course = courseByCode[s.courseCode];
-    const section = await prisma.section.create({
-      data: {
-        courseId: course!.id,
-        semesterId: currentSemester!.id,
-        sectionName: "A",
-        capacity: s.capacity,
-        room: s.room,
-        schedule: {
-          days: ["Monday", "Wednesday"],
-          startTime: "11:00",
-          endTime: "12:30",
-        },
-        status: SectionStatus.PUBLISHED,
+    await logAudit(
+      user.id,
+      AuditAction.UPDATE_PAYMENT_STATUS,
+      "Payment",
+      admPayment.id,
+      {
+        invoice: admInvoiceNumber,
+        type: "ADMISSION",
+        status: "SUCCESS",
       },
-    });
-    await prisma.sectionFaculty.create({
-      data: {
-        sectionId: section.id,
-        facultyId: facultyByEmpId[s.facultyEmpId]!.profileId,
-        isPrimary: true,
-      },
-    });
-    currentSections.push({
-      id: section.id,
-      courseCode: s.courseCode,
-      deptCode: course!.deptCode,
-      credits: course!.credits,
-    });
-
-    // Notify the assigned faculty member
-    await prisma.notification.create({
-      data: {
-        userId: facultyByEmpId[s.facultyEmpId]!.userId,
-        type: NotificationType.ACADEMIC,
-        title: "New Section Assigned",
-        message: `You have been assigned to teach ${s.courseCode} (Section A) for Fall 2026.`,
-      },
-    });
-  }
-  console.log(
-    `Created ${completedSections.length + currentSections.length} sections across both semesters.`,
-  );
-
-  // --- Enrollments, Attendance, Exams, Results (COMPLETED semester) -----------
-  let enrollmentCount = 0;
-  let attendanceCount = 0;
-  let examCount = 0;
-  let resultCount = 0;
-  let auditCount = 0;
-
-  const invoiceCounter = { value: 1 };
-  let invoiceCount = 0;
-  let paymentCount = 0;
-
-  async function logAudit(
-    actorId: string | null,
-    action: AuditAction,
-    entity: string,
-    entityId: string,
-    metadata?: object,
-  ) {
-    await prisma.auditLog.create({
-      data: {
-        actorId,
-        action,
-        entity,
-        entityId,
-        ...(metadata !== undefined ? { metadata } : {}),
-      },
-    });
-    auditCount++;
-  }
-
-  for (const section of completedSections) {
-    const deptStudents = students.filter(
-      (s) => s.deptCode === section.deptCode,
     );
 
-    // Midterm (30 marks) + Final (70 marks) — both already graded and published
-    const midterm = await prisma.exam.create({
-      data: {
-        sectionId: section.id,
-        examType: ExamType.MIDTERM,
-        title: `${section.courseCode} Midterm Examination`,
-        examDate: new Date("2026-03-01"),
-        totalMarks: 30,
-        weightage: 40,
-        status: ExamStatus.COMPLETED,
-      },
-    });
-    const final = await prisma.exam.create({
-      data: {
-        sectionId: section.id,
-        examType: ExamType.FINAL,
-        title: `${section.courseCode} Final Examination`,
-        examDate: new Date("2026-05-10"),
-        totalMarks: 70,
-        weightage: 60,
-        status: ExamStatus.COMPLETED,
-      },
-    });
-    examCount += 2;
+    // --------------------------------------------------------
+    // 7.4 Semester 1: FULLY COMPLETED (Graded, Published, Paid)
+    // --------------------------------------------------------
+    const sem1ProgramSemester = programSemestersMap[progCode]![1]!;
 
-    for (const student of deptStudents) {
-      const enrollment = await prisma.enrollment.create({
+    const sem1Enrollment = await prisma.semesterEnrollment.create({
+      data: {
+        studentId: profile.id,
+        programSemesterId: sem1ProgramSemester.id,
+        status: StudentSemesterStatus.COMPLETED,
+        enrolledAt: new Date("2026-01-10"),
+        completedAt: new Date("2026-05-25"),
+        semesterGpa: 0, // updated below once courses are graded
+      },
+    });
+    semEnrollmentCount++;
+
+    await logAudit(
+      user.id,
+      AuditAction.ENROLL,
+      "SemesterEnrollment",
+      sem1Enrollment.id,
+      {
+        semester: 1,
+        program: progCode,
+      },
+    );
+
+    // Semester 1 Fee Invoice & Payment
+    const sem1InvoiceNumber = `INV-2026-S1-${String(invoiceCounter++).padStart(4, "0")}`;
+    const sem1Invoice = await prisma.feeInvoice.create({
+      data: {
+        invoiceNumber: sem1InvoiceNumber,
+        studentId: profile.id,
+        type: InvoiceType.SEMESTER,
+        semesterEnrollmentId: sem1Enrollment.id,
+        description: `${progCode} Semester 1 Tuition Fee`,
+        amount: program.semesterFee,
+        dueDate: new Date("2026-01-20"),
+        status: InvoiceStatus.PAID,
+      },
+    });
+    invoiceCount++;
+
+    const sem1Payment = await prisma.payment.create({
+      data: {
+        transactionId: `TXN-S1-${String(paymentCounter++).padStart(4, "0")}`,
+        invoiceId: sem1Invoice.id,
+        studentId: profile.id,
+        amount: program.semesterFee,
+        gateway: pick([
+          PaymentGateway.BKASH,
+          PaymentGateway.SSLCOMMERZ,
+          PaymentGateway.STRIPE,
+        ]),
+        status: PaymentStatus.SUCCESS,
+        gatewayReference: `ref_s1_${Math.random().toString(36).slice(2, 10)}`,
+        paidAt: new Date("2026-01-15"),
+      },
+    });
+    paymentCount++;
+
+    await logAudit(
+      user.id,
+      AuditAction.UPDATE_PAYMENT_STATUS,
+      "Payment",
+      sem1Payment.id,
+      {
+        invoice: sem1InvoiceNumber,
+        status: "SUCCESS",
+      },
+    );
+
+    // Courses in Semester 1
+    const sem1Courses = CURRICULUM_DISTRIBUTION[progCode]![1]!;
+    let totalGradePoints = 0;
+
+    for (const cInfo of sem1Courses) {
+      const scKey = `${progCode}_S1_${cInfo.courseCode}`;
+      const sc = semesterCourseMap[scKey]!;
+      const exams = sem1ExamsMap[scKey]!;
+      const faculty = facultyMap[cInfo.teacherEmpId]!;
+
+      // Realistic high performance (mostly A/A-/B+)
+      const midMarks = randomInt(20, 29); // out of 30
+      const finalMarks = randomInt(50, 68); // out of 70
+      const totalPct = midMarks + finalMarks;
+      const { grade, point } = gradeFromPercentage(totalPct);
+      totalGradePoints += point;
+
+      const courseEnrollment = await prisma.courseEnrollment.create({
         data: {
-          studentId: student.profileId,
-          sectionId: section.id,
+          studentId: profile.id,
+          semesterCourseId: sc.id,
+          semesterEnrollmentId: sem1Enrollment.id,
           status: EnrollmentStatus.COMPLETED,
-          enrolledAt: new Date("2025-12-10"),
+          enrolledAt: new Date("2026-01-10"),
+          finalGrade: grade,
+          gradePoint: point,
         },
       });
-      enrollmentCount++;
-      await logAudit(
-        student.userId,
-        AuditAction.ENROLL,
-        "Enrollment",
-        enrollment.id,
-        { section: section.courseCode },
-      );
+      courseEnrollmentCount++;
 
-      // Attendance: 6 weekly classes, mostly present
-      for (let w = 0; w < 6; w++) {
-        const classDate = new Date("2026-01-11");
-        classDate.setDate(classDate.getDate() + w * 7);
-        const status =
+      // Attendance: 6 class sessions in Spring
+      const classDates = [
+        "2026-01-15",
+        "2026-01-22",
+        "2026-01-29",
+        "2026-02-05",
+        "2026-02-12",
+        "2026-02-19",
+      ];
+      for (const d of classDates) {
+        const attStatus =
           Math.random() < 0.85
             ? AttendanceStatus.PRESENT
-            : pick([AttendanceStatus.ABSENT, AttendanceStatus.LATE]);
+            : pick([AttendanceStatus.LATE, AttendanceStatus.ABSENT]);
+
         await prisma.attendance.create({
           data: {
-            enrollmentId: enrollment.id,
-            studentId: student.profileId,
-            sectionId: section.id,
-            classDate,
-            status,
-            markedById:
-              facultyByEmpId[
-                COMPLETED_SEMESTER_SECTIONS.find(
-                  (c) => c.courseCode === section.courseCode,
-                )!.facultyEmpId
-              ]!.userId,
+            courseEnrollmentId: courseEnrollment.id,
+            studentId: profile.id,
+            semesterCourseId: sc.id,
+            classDate: new Date(d),
+            status: attStatus,
+            markedById: faculty.userId,
           },
         });
         attendanceCount++;
       }
 
-      // Results: midterm + final, both published
-      const midMarks = randomInt(18, 30);
-      const finalMarks = randomInt(38, 70);
-      const percentage = midMarks + finalMarks;
-      const { grade, point } = gradeFromPercentage(percentage);
-      const enteredBy =
-        facultyByEmpId[
-          COMPLETED_SEMESTER_SECTIONS.find(
-            (c) => c.courseCode === section.courseCode,
-          )!.facultyEmpId
-        ]!.userId;
-
-      const midResult = await prisma.result.create({
+      // Results: Midterm & Final (both published)
+      await prisma.result.create({
         data: {
-          examId: midterm.id,
-          studentId: student.profileId,
-          enrollmentId: enrollment.id,
+          examId: exams.midterm.id,
+          studentId: profile.id,
+          courseEnrollmentId: courseEnrollment.id,
           marksObtained: midMarks,
           status: ResultStatus.PUBLISHED,
-          publishedAt: new Date("2026-03-10"),
-          enteredById: enteredBy,
+          publishedAt: new Date("2026-03-12"),
+          enteredById: faculty.userId,
         },
       });
-      const finalResult = await prisma.result.create({
+
+      await prisma.result.create({
         data: {
-          examId: final.id,
-          studentId: student.profileId,
-          enrollmentId: enrollment.id,
+          examId: exams.final.id,
+          studentId: profile.id,
+          courseEnrollmentId: courseEnrollment.id,
           marksObtained: finalMarks,
           grade,
           gradePoint: point,
           status: ResultStatus.PUBLISHED,
           publishedAt: new Date("2026-05-20"),
-          enteredById: enteredBy,
+          enteredById: faculty.userId,
         },
       });
       resultCount += 2;
+
       await logAudit(
-        enteredBy,
+        faculty.userId,
         AuditAction.PUBLISH_RESULT,
         "Result",
-        finalResult.id,
-        { course: section.courseCode, grade },
-      );
-      void midResult;
-
-      // Roll the final grade up onto the enrollment
-      await prisma.enrollment.update({
-        where: { id: enrollment.id },
-        data: { finalGrade: grade, gradePoint: point },
-      });
-
-      // Fee invoice for this semester — paid in full
-      const invoiceNumber = `INV-2026-SPR-${String(invoiceCounter.value++).padStart(4, "0")}`;
-      const invoice = await prisma.feeInvoice.create({
-        data: {
-          invoiceNumber,
-          studentId: student.profileId,
-          semesterId: completedSemester.id,
-          description: "Spring 2026 Tuition & Fees",
-          amount: 45000,
-          dueDate: new Date("2026-01-20"),
-          status: InvoiceStatus.PAID,
+        courseEnrollment.id,
+        {
+          course: cInfo.courseCode,
+          grade,
+          student: studentId,
         },
-      });
-      invoiceCount++;
+      );
+    }
 
-      const gateway = pick([
-        PaymentGateway.STRIPE,
-        PaymentGateway.BKASH,
-        PaymentGateway.SSLCOMMERZ,
-      ]);
-      const payment = await prisma.payment.create({
+    // Update Semester 1 GPA
+    const sem1Gpa = Number((totalGradePoints / sem1Courses.length).toFixed(2));
+    await prisma.semesterEnrollment.update({
+      where: { id: sem1Enrollment.id },
+      data: { semesterGpa: sem1Gpa },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: NotificationType.SUCCESS,
+        title: "Semester 1 Completed",
+        message: `Congratulations! You completed Semester 1 with GPA ${sem1Gpa}. Semester 2 is unlocked.`,
+      },
+    });
+
+    // --------------------------------------------------------
+    // 7.5 Semester 2: IN PROGRESS (Ongoing Attendance, Ungraded Midterm, Mixed Payments)
+    // --------------------------------------------------------
+    const sem2Enrollment = await prisma.semesterEnrollment.create({
+      data: {
+        studentId: profile.id,
+        programSemesterId: sem2ProgramSemester.id,
+        status: StudentSemesterStatus.IN_PROGRESS,
+        enrolledAt: new Date("2026-08-20"),
+      },
+    });
+    semEnrollmentCount++;
+
+    await logAudit(
+      user.id,
+      AuditAction.ENROLL,
+      "SemesterEnrollment",
+      sem2Enrollment.id,
+      {
+        semester: 2,
+        program: progCode,
+      },
+    );
+
+    // Semester 2 Fee Invoice & Mixed Payment States:
+    // - Students 0..11: PAID (12 students)
+    // - Student 12: PENDING with 1 FAILED payment attempt (Taslima Begum)
+    // - Students 13..19: PENDING (7 students)
+    const isPaid = i < 12;
+    const isFailedAttempt = i === 12;
+
+    const sem2InvoiceNumber = `INV-2026-S2-${String(invoiceCounter++).padStart(4, "0")}`;
+    const sem2Invoice = await prisma.feeInvoice.create({
+      data: {
+        invoiceNumber: sem2InvoiceNumber,
+        studentId: profile.id,
+        type: InvoiceType.SEMESTER,
+        semesterEnrollmentId: sem2Enrollment.id,
+        description: `${progCode} Semester 2 Tuition Fee`,
+        amount: program.semesterFee,
+        dueDate: new Date("2026-09-25"),
+        status: isPaid ? InvoiceStatus.PAID : InvoiceStatus.PENDING,
+      },
+    });
+    invoiceCount++;
+
+    if (isPaid) {
+      const sem2Payment = await prisma.payment.create({
         data: {
-          transactionId: `TXN-${invoiceNumber}`,
-          invoiceId: invoice.id,
-          studentId: student.profileId,
-          amount: 45000,
-          gateway,
+          transactionId: `TXN-S2-${String(paymentCounter++).padStart(4, "0")}`,
+          invoiceId: sem2Invoice.id,
+          studentId: profile.id,
+          amount: program.semesterFee,
+          gateway: pick([
+            PaymentGateway.STRIPE,
+            PaymentGateway.BKASH,
+            PaymentGateway.SSLCOMMERZ,
+          ]),
           status: PaymentStatus.SUCCESS,
-          gatewayReference: `ref_${Math.random().toString(36).slice(2, 12)}`,
-          paidAt: new Date("2026-01-18"),
+          gatewayReference: `ref_s2_${Math.random().toString(36).slice(2, 10)}`,
+          paidAt: new Date("2026-09-02"),
         },
       });
       paymentCount++;
+
       await logAudit(
-        student.userId,
+        user.id,
         AuditAction.UPDATE_PAYMENT_STATUS,
         "Payment",
-        payment.id,
-        { status: "SUCCESS", invoice: invoiceNumber },
+        sem2Payment.id,
+        {
+          invoice: sem2InvoiceNumber,
+          status: "SUCCESS",
+        },
       );
 
       await prisma.notification.create({
         data: {
-          userId: student.userId,
+          userId: user.id,
           type: NotificationType.PAYMENT,
-          title: "Payment Successful",
-          message: `Your payment of BDT 45,000 for invoice ${invoiceNumber} was received successfully.`,
+          title: "Payment Received",
+          message: `Your payment of ৳50,000 for invoice ${sem2InvoiceNumber} was received.`,
         },
       });
+    } else if (isFailedAttempt) {
+      const failedPayment = await prisma.payment.create({
+        data: {
+          transactionId: `TXN-S2-${String(paymentCounter++).padStart(4, "0")}`,
+          invoiceId: sem2Invoice.id,
+          studentId: profile.id,
+          amount: program.semesterFee,
+          gateway: PaymentGateway.SSLCOMMERZ,
+          status: PaymentStatus.FAILED,
+          gatewayReference: `ref_s2_fail_${Math.random().toString(36).slice(2, 10)}`,
+        },
+      });
+      paymentCount++;
+
+      await logAudit(
+        user.id,
+        AuditAction.UPDATE_PAYMENT_STATUS,
+        "Payment",
+        failedPayment.id,
+        {
+          invoice: sem2InvoiceNumber,
+          status: "FAILED",
+        },
+      );
+
       await prisma.notification.create({
         data: {
-          userId: student.userId,
-          type: NotificationType.ACADEMIC,
-          title: "Results Published",
-          message: `Your results for ${section.courseCode} (Spring 2026) have been published.`,
+          userId: user.id,
+          type: NotificationType.ERROR,
+          title: "Payment Failed",
+          message: `Your payment attempt for invoice ${sem2InvoiceNumber} failed. Please retry before due date.`,
+        },
+      });
+    } else {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: NotificationType.WARNING,
+          title: "Tuition Fee Due",
+          message: `Invoice ${sem2InvoiceNumber} (৳50,000) for Semester 2 is due on 2026-09-25.`,
         },
       });
     }
-  }
-  console.log(
-    "Seeded enrollments, attendance, exams, results, invoices, and payments for the completed semester.",
-  );
 
-  // --- Enrollments, Attendance, Exams (CURRENT semester — in progress) --------
-  for (const section of currentSections) {
-    const deptStudents = students.filter(
-      (s) => s.deptCode === section.deptCode,
-    );
-    // Not every student re-enrolls in the advanced course — take up to 5 continuing students
-    const enrolling = deptStudents.slice(0, Math.min(5, deptStudents.length));
-    const facultyUserId =
-      facultyByEmpId[
-        CURRENT_SEMESTER_SECTIONS.find(
-          (c) => c.courseCode === section.courseCode,
-        )!.facultyEmpId
-      ]!.userId;
+    // Courses in Semester 2
+    const sem2Courses = CURRICULUM_DISTRIBUTION[progCode]![2]!;
 
-    // Midterm scheduled but not yet graded; final not yet scheduled to occur
-    const midterm = await prisma.exam.create({
-      data: {
-        sectionId: section.id,
-        examType: ExamType.MIDTERM,
-        title: `${section.courseCode} Midterm Examination`,
-        examDate: new Date("2026-10-15"),
-        totalMarks: 30,
-        weightage: 40,
-        status: ExamStatus.PUBLISHED,
-      },
-    });
-    const final = await prisma.exam.create({
-      data: {
-        sectionId: section.id,
-        examType: ExamType.FINAL,
-        title: `${section.courseCode} Final Examination`,
-        examDate: new Date("2026-12-10"),
-        totalMarks: 70,
-        weightage: 60,
-        status: ExamStatus.DRAFT,
-      },
-    });
-    examCount += 2;
-    void midterm;
-    void final;
+    for (let cIdx = 0; cIdx < sem2Courses.length; cIdx++) {
+      const cInfo = sem2Courses[cIdx]!;
+      const scKey = `${progCode}_S2_${cInfo.courseCode}`;
+      const sc = semesterCourseMap[scKey]!;
+      const faculty = facultyMap[cInfo.teacherEmpId]!;
 
-    for (let idx = 0; idx < enrolling.length; idx++) {
-      const student = enrolling[idx];
-      // Demonstrate the DROPPED status on one enrollment for edge-case testing
-      const isDropped =
-        section.courseCode === "CSE301" && idx === enrolling.length - 1;
+      // Edge case: Exactly 1 deliberately DROPPED course enrollment across the entire system
+      // Student 0 (Arif Rahman, BSC-CSE) drops their 2nd course (CSE203 Discrete Mathematics)
+      const isDropped = i === 0 && cIdx === 1;
 
-      const enrollment = await prisma.enrollment.create({
+      const courseEnrollment = await prisma.courseEnrollment.create({
         data: {
-          studentId: student!.profileId,
-          sectionId: section.id,
+          studentId: profile.id,
+          semesterCourseId: sc.id,
+          semesterEnrollmentId: sem2Enrollment.id,
           status: isDropped
             ? EnrollmentStatus.DROPPED
             : EnrollmentStatus.ENROLLED,
           enrolledAt: new Date("2026-08-20"),
-          droppedAt: isDropped ? new Date("2026-09-05") : null,
+          droppedAt: isDropped ? new Date("2026-09-08") : null,
         },
       });
-      enrollmentCount++;
-      await logAudit(
-        student!.userId,
-        AuditAction.ENROLL,
-        "Enrollment",
-        enrollment.id,
-        { section: section.courseCode },
-      );
+      courseEnrollmentCount++;
+
       if (isDropped) {
         await logAudit(
-          student!.userId,
+          user.id,
           AuditAction.DROP_ENROLLMENT,
-          "Enrollment",
-          enrollment.id,
-          { section: section.courseCode },
+          "CourseEnrollment",
+          courseEnrollment.id,
+          {
+            course: cInfo.courseCode,
+            reason: "Student voluntarily dropped course",
+          },
         );
-        continue; // no attendance/invoice for a dropped enrollment
+        continue; // No ongoing attendance for dropped course
       }
 
-      // Attendance so far this term (classes started Sept 1, 2026)
-      for (const day of ["2026-09-02", "2026-09-04", "2026-09-07"]) {
-        const status =
+      // Ongoing Attendance: 4 recent classes in September
+      const ongoingDates = [
+        "2026-09-03",
+        "2026-09-10",
+        "2026-09-17",
+        "2026-09-24",
+      ];
+      for (const d of ongoingDates) {
+        const attStatus =
           Math.random() < 0.9
             ? AttendanceStatus.PRESENT
             : AttendanceStatus.ABSENT;
+
         await prisma.attendance.create({
           data: {
-            enrollmentId: enrollment.id,
-            studentId: student!.profileId,
-            sectionId: section.id,
-            classDate: new Date(day),
-            status,
-            markedById: facultyUserId,
+            courseEnrollmentId: courseEnrollment.id,
+            studentId: profile.id,
+            semesterCourseId: sc.id,
+            classDate: new Date(d),
+            status: attStatus,
+            markedById: faculty.userId,
           },
         });
         attendanceCount++;
       }
-
-      // Fee invoice for the current semester — mixed payment states
-      const invoiceNumber = `INV-2026-FAL-${String(invoiceCounter.value++).padStart(4, "0")}`;
-      const paymentOutcome = pick([
-        "PAID",
-        "PENDING",
-        "PENDING",
-        "FAILED_ATTEMPT",
-      ]);
-      const invoice = await prisma.feeInvoice.create({
-        data: {
-          invoiceNumber,
-          studentId: student!.profileId,
-          semesterId: currentSemester.id,
-          description: "Fall 2026 Tuition & Fees",
-          amount: 45000,
-          dueDate: new Date("2026-09-20"),
-          status:
-            paymentOutcome === "PAID"
-              ? InvoiceStatus.PAID
-              : InvoiceStatus.PENDING,
-        },
-      });
-      invoiceCount++;
-      await logAudit(
-        adminUser.id,
-        AuditAction.CREATE_INVOICE,
-        "FeeInvoice",
-        invoice.id,
-        { student: student!.studentId },
-      );
-
-      if (paymentOutcome === "PAID") {
-        const gateway = pick([
-          PaymentGateway.STRIPE,
-          PaymentGateway.BKASH,
-          PaymentGateway.SSLCOMMERZ,
-        ]);
-        const payment = await prisma.payment.create({
-          data: {
-            transactionId: `TXN-${invoiceNumber}`,
-            invoiceId: invoice.id,
-            studentId: student!.profileId,
-            amount: 45000,
-            gateway,
-            status: PaymentStatus.SUCCESS,
-            gatewayReference: `ref_${Math.random().toString(36).slice(2, 12)}`,
-            paidAt: new Date("2026-09-05"),
-          },
-        });
-        paymentCount++;
-        await logAudit(
-          student!.userId,
-          AuditAction.UPDATE_PAYMENT_STATUS,
-          "Payment",
-          payment.id,
-          { status: "SUCCESS" },
-        );
-        await prisma.notification.create({
-          data: {
-            userId: student!.userId,
-            type: NotificationType.PAYMENT,
-            title: "Payment Successful",
-            message: `Your payment of BDT 45,000 for invoice ${invoiceNumber} was received successfully.`,
-          },
-        });
-      } else if (paymentOutcome === "FAILED_ATTEMPT") {
-        const payment = await prisma.payment.create({
-          data: {
-            transactionId: `TXN-${invoiceNumber}`,
-            invoiceId: invoice.id,
-            studentId: student!.profileId,
-            amount: 45000,
-            gateway: PaymentGateway.SSLCOMMERZ,
-            status: PaymentStatus.FAILED,
-            gatewayReference: `ref_${Math.random().toString(36).slice(2, 12)}`,
-          },
-        });
-        paymentCount++;
-        await logAudit(
-          student!.userId,
-          AuditAction.UPDATE_PAYMENT_STATUS,
-          "Payment",
-          payment.id,
-          { status: "FAILED" },
-        );
-        await prisma.notification.create({
-          data: {
-            userId: student!.userId,
-            type: NotificationType.ERROR,
-            title: "Payment Failed",
-            message: `Your payment attempt for invoice ${invoiceNumber} failed. Please try again.`,
-          },
-        });
-      } else {
-        await prisma.notification.create({
-          data: {
-            userId: student!.userId,
-            type: NotificationType.WARNING,
-            title: "Fee Payment Due",
-            message: `Invoice ${invoiceNumber} (BDT 45,000) is due on 2026-09-20.`,
-          },
-        });
-      }
     }
   }
   console.log(
-    "Seeded enrollments, attendance, exams, invoices, and payments for the current (in-progress) semester.",
+    `Successfully seeded all 20 students with complete academic histories and active semesters.`,
   );
 
-  // --- A couple of login/register audit entries for realism -------------------
-  await logAudit(adminUser.id, AuditAction.LOGIN, "User", adminUser.id, {
-    source: "seed",
-  });
-  for (const f of Object.values(facultyByEmpId)) {
-    await logAudit(f!.userId, AuditAction.LOGIN, "User", f!.userId, {
-      source: "seed",
-    });
-  }
-
-  // --- One sample refresh token (e.g. for the admin's active session) ---------
+  // ==========================================================
+  // 8. Sample Active Refresh Token
+  // ==========================================================
+  console.log("\nSeeding sample session tokens...");
   await prisma.refreshToken.create({
     data: {
       userId: adminUser.id,
-      tokenHash: `seed_refresh_${Math.random().toString(36).slice(2, 20)}`,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      userAgent: "seed-script",
+      tokenHash: `seed_refresh_admin_${Math.random().toString(36).slice(2, 16)}`,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      userAgent: "PostmanRuntime/7.43.0",
       ipAddress: "127.0.0.1",
     },
   });
 
-  console.log(
-    `Seeded ${enrollmentCount} enrollments, ${attendanceCount} attendance records, ${examCount} exams, ${resultCount} results, ${invoiceCount} invoices, ${paymentCount} payments, ${auditCount} audit logs.`,
-  );
+  const durationSec = ((Date.now() - startTime) / 1000).toFixed(2);
 
-  // ----------------------------------------------------------
-  // Summary
-  // ----------------------------------------------------------
-  console.log("\n==================== SEED COMPLETE ====================");
-  console.log("---------------------------------------------------------");
-  console.log("ADMIN     : admin@university.edu");
+  // ==========================================================
+  // Summary Report
+  // ==========================================================
+  console.log("\n========================================================");
+  console.log("       UNIVERSITY MANAGEMENT SYSTEM — SEED COMPLETE      ");
+  console.log("========================================================");
+  console.log(`Execution time: ${durationSec}s`);
+  console.log("--------------------------------------------------------");
   console.log(
-    "FACULTY   :",
-    FACULTY.map((f) => `${slug(f.first, f.last)}@university.edu`).join(", "),
+    `Departments         : ${Object.keys(deptMap).length} (CSE, EEE, BBA)`,
   );
   console.log(
-    "STUDENT   :",
-    `${slug(STUDENT_NAMES[0][0], STUDENT_NAMES[0][1])}@student.university.edu`,
-    "(and 19 more, pattern firstname.lastname@student.university.edu)",
+    `Programs            : ${Object.keys(programMap).length} (BSc-CSE, BSc-EEE, BBA-GEN, MSc-CSE, PhD-CSE)`,
   );
-  console.log("=========================================================\n");
+  console.log(
+    `ProgramSemesters    : ${totalSemestersCreated} (34 slots total)`,
+  );
+  console.log(
+    `Courses             : ${Object.keys(courseMap).length} (26 catalog entries)`,
+  );
+  console.log(
+    `SemesterCourses     : ${semesterCoursesCount} (curriculum slots with assigned teachers)`,
+  );
+  console.log(
+    `Users               : 26 total (1 Admin, 5 Faculty, 20 Students)`,
+  );
+  console.log(
+    `SemesterEnrollments : ${semEnrollmentCount} (20 completed S1 + 20 in-progress S2)`,
+  );
+  console.log(
+    `CourseEnrollments   : ${courseEnrollmentCount} (includes 1 deliberately dropped course)`,
+  );
+  console.log(`Attendance Records  : ${attendanceCount}`);
+  console.log(`Exams Created       : ${examCount}`);
+  console.log(
+    `Results Published   : ${resultCount} (Semester 1 exams graded & published)`,
+  );
+  console.log(
+    `Invoices Created    : ${invoiceCount} (20 Admission + 20 Sem 1 + 20 Sem 2)`,
+  );
+  console.log(
+    `Payments Recorded   : ${paymentCount} (40 S1/Admission paid + 12 S2 paid + 1 S2 failed)`,
+  );
+  console.log(`Audit Logs Recorded : ${auditCount}`);
+  console.log("--------------------------------------------------------");
+  console.log("DEMO ACCOUNTS (Password: Passw0rd!123 for all):");
+  console.log(`  ADMIN   : ${adminUser.email}`);
+  console.log("  FACULTY :");
+  for (const f of FACULTY) {
+    console.log(
+      `    - ${f.empId} (${f.deptCode}): ${slug(f.first, f.last)}@university.edu`,
+    );
+  }
+  console.log("  STUDENTS (20 total, cycled across BSc programs):");
+  console.log(
+    `    - arif.rahman@student.university.edu (BSc-CSE, has dropped CSE203 in S2)`,
+  );
+  console.log(`    - nusrat.jahan@student.university.edu (BSc-EEE)`);
+  console.log(`    - tanvir.ahmed@student.university.edu (BBA-GEN)`);
+  console.log(
+    `    - taslima.begum@student.university.edu (BSc-CSE, failed S2 payment attempt)`,
+  );
+  console.log(
+    `    - ...and 16 more (format: firstname.lastname@student.university.edu)`,
+  );
+  console.log("========================================================\n");
 }
 
 main()
-  .catch((err) => {
-    console.error("Seed failed:", err);
+  .catch((e) => {
+    console.error("Seed execution failed:", e);
     process.exit(1);
   })
   .finally(async () => {

@@ -1,11 +1,14 @@
-/*
-  Warnings:
-
-  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
-
-*/
 -- CreateEnum
-CREATE TYPE "Role" AS ENUM ('STUDENT', 'FACULTY', 'ADMIN');
+CREATE TYPE "Role" AS ENUM ('USER', 'STUDENT', 'FACULTY', 'ADMIN');
+
+-- CreateEnum
+CREATE TYPE "ApplicationRole" AS ENUM ('STUDENT', 'FACULTY');
+
+-- CreateEnum
+CREATE TYPE "ApplicationStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+
+-- CreateEnum
+CREATE TYPE "AuthProvider" AS ENUM ('GOOGLE', 'CREDENTIAL');
 
 -- CreateEnum
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION');
@@ -18,6 +21,12 @@ CREATE TYPE "EntityStatus" AS ENUM ('ACTIVE', 'INACTIVE');
 
 -- CreateEnum
 CREATE TYPE "CourseStatus" AS ENUM ('DRAFT', 'PUBLISHED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "DegreeType" AS ENUM ('BSC', 'MSC', 'PHD');
+
+-- CreateEnum
+CREATE TYPE "StudentSemesterStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "SemesterStatus" AS ENUM ('UPCOMING', 'REGISTRATION_OPEN', 'CURRENT', 'COMPLETED', 'ARCHIVED');
@@ -44,6 +53,9 @@ CREATE TYPE "ResultStatus" AS ENUM ('DRAFT', 'SUBMITTED', 'PUBLISHED');
 CREATE TYPE "Grade" AS ENUM ('A_PLUS', 'A', 'A_MINUS', 'B_PLUS', 'B', 'B_MINUS', 'C_PLUS', 'C', 'C_MINUS', 'D', 'F', 'I', 'W');
 
 -- CreateEnum
+CREATE TYPE "InvoiceType" AS ENUM ('ADMISSION', 'SEMESTER');
+
+-- CreateEnum
 CREATE TYPE "InvoiceStatus" AS ENUM ('PENDING', 'PAID', 'OVERDUE', 'CANCELLED');
 
 -- CreateEnum
@@ -57,9 +69,6 @@ CREATE TYPE "NotificationType" AS ENUM ('INFO', 'WARNING', 'SUCCESS', 'ERROR', '
 
 -- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('LOGIN', 'LOGOUT', 'REGISTER', 'ROLE_CHANGE', 'CREATE', 'UPDATE', 'DELETE', 'ENROLL', 'DROP_ENROLLMENT', 'MARK_ATTENDANCE', 'UPDATE_ATTENDANCE', 'CREATE_EXAM', 'UPDATE_EXAM', 'CREATE_RESULT', 'UPDATE_RESULT', 'PUBLISH_RESULT', 'CREATE_INVOICE', 'UPDATE_PAYMENT_STATUS', 'ADMIN_ACTION');
-
--- DropTable
-DROP TABLE "User";
 
 -- CreateTable
 CREATE TABLE "departments" (
@@ -81,8 +90,12 @@ CREATE TABLE "programs" (
     "name" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "departmentId" TEXT NOT NULL,
+    "degreeType" "DegreeType" NOT NULL,
+    "totalSemesters" INTEGER NOT NULL,
     "durationYears" INTEGER NOT NULL,
     "totalCredits" INTEGER NOT NULL,
+    "admissionFee" DECIMAL(10,2) NOT NULL,
+    "semesterFee" DECIMAL(10,2) NOT NULL DEFAULT 50000,
     "status" "EntityStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -108,36 +121,44 @@ CREATE TABLE "courses" (
 );
 
 -- CreateTable
-CREATE TABLE "course_prerequisites" (
+CREATE TABLE "role_applications" (
     "id" TEXT NOT NULL,
-    "courseId" TEXT NOT NULL,
-    "prerequisiteId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "requestedRole" "ApplicationRole" NOT NULL,
+    "status" "ApplicationStatus" NOT NULL DEFAULT 'PENDING',
+    "programInterest" TEXT,
+    "departmentInterest" TEXT,
+    "highestQualification" TEXT,
+    "specialization" TEXT,
+    "statement" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "course_prerequisites_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "role_applications_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "semesters" (
+CREATE TABLE "semester_enrollments" (
     "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "startDate" TIMESTAMP(3) NOT NULL,
-    "endDate" TIMESTAMP(3) NOT NULL,
-    "registrationStart" TIMESTAMP(3) NOT NULL,
-    "registrationEnd" TIMESTAMP(3) NOT NULL,
-    "status" "SemesterStatus" NOT NULL DEFAULT 'UPCOMING',
+    "studentId" TEXT NOT NULL,
+    "programSemesterId" TEXT NOT NULL,
+    "status" "StudentSemesterStatus" NOT NULL DEFAULT 'NOT_STARTED',
+    "enrolledAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3),
+    "semesterGpa" DOUBLE PRECISION,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
 
-    CONSTRAINT "semesters_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "semester_enrollments_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "enrollments" (
+CREATE TABLE "course_enrollments" (
     "id" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
-    "sectionId" TEXT NOT NULL,
+    "semesterCourseId" TEXT NOT NULL,
+    "semesterEnrollmentId" TEXT NOT NULL,
     "status" "EnrollmentStatus" NOT NULL DEFAULT 'ENROLLED',
     "enrolledAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "droppedAt" TIMESTAMP(3),
@@ -147,15 +168,15 @@ CREATE TABLE "enrollments" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
 
-    CONSTRAINT "enrollments_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "course_enrollments_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "attendance" (
     "id" TEXT NOT NULL,
-    "enrollmentId" TEXT NOT NULL,
+    "courseEnrollmentId" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
-    "sectionId" TEXT NOT NULL,
+    "semesterCourseId" TEXT NOT NULL,
     "classDate" TIMESTAMP(3) NOT NULL,
     "status" "AttendanceStatus" NOT NULL,
     "markedById" TEXT NOT NULL,
@@ -170,7 +191,7 @@ CREATE TABLE "attendance" (
 -- CreateTable
 CREATE TABLE "exams" (
     "id" TEXT NOT NULL,
-    "sectionId" TEXT NOT NULL,
+    "semesterCourseId" TEXT NOT NULL,
     "examType" "ExamType" NOT NULL,
     "title" TEXT,
     "examDate" TIMESTAMP(3) NOT NULL,
@@ -189,7 +210,7 @@ CREATE TABLE "results" (
     "id" TEXT NOT NULL,
     "examId" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
-    "enrollmentId" TEXT NOT NULL,
+    "courseEnrollmentId" TEXT NOT NULL,
     "marksObtained" DOUBLE PRECISION NOT NULL,
     "grade" "Grade",
     "gradePoint" DOUBLE PRECISION,
@@ -208,7 +229,9 @@ CREATE TABLE "fee_invoices" (
     "id" TEXT NOT NULL,
     "invoiceNumber" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
-    "semesterId" TEXT,
+    "type" "InvoiceType" NOT NULL,
+    "programId" TEXT,
+    "semesterEnrollmentId" TEXT,
     "description" TEXT NOT NULL,
     "amount" DECIMAL(10,2) NOT NULL,
     "dueDate" TIMESTAMP(3) NOT NULL,
@@ -277,7 +300,7 @@ CREATE TABLE "student_profiles" (
     "studentId" TEXT NOT NULL,
     "programId" TEXT,
     "departmentId" TEXT,
-    "currentSemesterId" TEXT,
+    "currentProgramSemesterId" TEXT,
     "batchYear" INTEGER,
     "gender" "Gender",
     "dateOfBirth" TIMESTAMP(3),
@@ -309,31 +332,31 @@ CREATE TABLE "faculty_profiles" (
 );
 
 -- CreateTable
-CREATE TABLE "sections" (
+CREATE TABLE "program_semesters" (
     "id" TEXT NOT NULL,
-    "courseId" TEXT NOT NULL,
-    "semesterId" TEXT NOT NULL,
-    "sectionName" TEXT NOT NULL,
-    "capacity" INTEGER NOT NULL,
-    "room" TEXT,
-    "schedule" JSONB,
-    "status" "SectionStatus" NOT NULL DEFAULT 'DRAFT',
+    "programId" TEXT NOT NULL,
+    "semesterNumber" INTEGER NOT NULL,
+    "name" TEXT NOT NULL,
+    "status" "EntityStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
 
-    CONSTRAINT "sections_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "program_semesters_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "section_faculty" (
+CREATE TABLE "semester_courses" (
     "id" TEXT NOT NULL,
-    "sectionId" TEXT NOT NULL,
-    "facultyId" TEXT NOT NULL,
-    "isPrimary" BOOLEAN NOT NULL DEFAULT true,
+    "programSemesterId" TEXT NOT NULL,
+    "courseId" TEXT NOT NULL,
+    "teacherId" TEXT NOT NULL,
+    "status" "EntityStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
-    CONSTRAINT "section_faculty_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "semester_courses_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -394,6 +417,9 @@ CREATE INDEX "programs_departmentId_idx" ON "programs"("departmentId");
 CREATE INDEX "programs_status_idx" ON "programs"("status");
 
 -- CreateIndex
+CREATE INDEX "programs_degreeType_idx" ON "programs"("degreeType");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "courses_courseCode_key" ON "courses"("courseCode");
 
 -- CreateIndex
@@ -406,37 +432,40 @@ CREATE INDEX "courses_departmentId_idx" ON "courses"("departmentId");
 CREATE INDEX "courses_status_idx" ON "courses"("status");
 
 -- CreateIndex
-CREATE INDEX "course_prerequisites_courseId_idx" ON "course_prerequisites"("courseId");
+CREATE UNIQUE INDEX "role_applications_userId_key" ON "role_applications"("userId");
 
 -- CreateIndex
-CREATE INDEX "course_prerequisites_prerequisiteId_idx" ON "course_prerequisites"("prerequisiteId");
+CREATE INDEX "role_applications_requestedRole_status_idx" ON "role_applications"("requestedRole", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "course_prerequisites_courseId_prerequisiteId_key" ON "course_prerequisites"("courseId", "prerequisiteId");
+CREATE INDEX "role_applications_createdAt_idx" ON "role_applications"("createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "semesters_name_key" ON "semesters"("name");
+CREATE INDEX "semester_enrollments_studentId_idx" ON "semester_enrollments"("studentId");
 
 -- CreateIndex
-CREATE INDEX "semesters_status_idx" ON "semesters"("status");
+CREATE INDEX "semester_enrollments_programSemesterId_idx" ON "semester_enrollments"("programSemesterId");
 
 -- CreateIndex
-CREATE INDEX "semesters_startDate_idx" ON "semesters"("startDate");
+CREATE INDEX "semester_enrollments_status_idx" ON "semester_enrollments"("status");
 
 -- CreateIndex
-CREATE INDEX "enrollments_studentId_idx" ON "enrollments"("studentId");
+CREATE UNIQUE INDEX "semester_enrollments_studentId_programSemesterId_key" ON "semester_enrollments"("studentId", "programSemesterId");
 
 -- CreateIndex
-CREATE INDEX "enrollments_sectionId_idx" ON "enrollments"("sectionId");
+CREATE INDEX "course_enrollments_studentId_idx" ON "course_enrollments"("studentId");
 
 -- CreateIndex
-CREATE INDEX "enrollments_status_idx" ON "enrollments"("status");
+CREATE INDEX "course_enrollments_semesterCourseId_idx" ON "course_enrollments"("semesterCourseId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "enrollments_studentId_sectionId_key" ON "enrollments"("studentId", "sectionId");
+CREATE INDEX "course_enrollments_status_idx" ON "course_enrollments"("status");
 
 -- CreateIndex
-CREATE INDEX "attendance_sectionId_idx" ON "attendance"("sectionId");
+CREATE UNIQUE INDEX "course_enrollments_studentId_semesterCourseId_key" ON "course_enrollments"("studentId", "semesterCourseId");
+
+-- CreateIndex
+CREATE INDEX "attendance_semesterCourseId_idx" ON "attendance"("semesterCourseId");
 
 -- CreateIndex
 CREATE INDEX "attendance_studentId_idx" ON "attendance"("studentId");
@@ -448,10 +477,10 @@ CREATE INDEX "attendance_classDate_idx" ON "attendance"("classDate");
 CREATE INDEX "attendance_status_idx" ON "attendance"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "attendance_studentId_sectionId_classDate_key" ON "attendance"("studentId", "sectionId", "classDate");
+CREATE UNIQUE INDEX "attendance_studentId_semesterCourseId_classDate_key" ON "attendance"("studentId", "semesterCourseId", "classDate");
 
 -- CreateIndex
-CREATE INDEX "exams_sectionId_idx" ON "exams"("sectionId");
+CREATE INDEX "exams_semesterCourseId_idx" ON "exams"("semesterCourseId");
 
 -- CreateIndex
 CREATE INDEX "exams_examDate_idx" ON "exams"("examDate");
@@ -482,6 +511,9 @@ CREATE INDEX "fee_invoices_status_idx" ON "fee_invoices"("status");
 
 -- CreateIndex
 CREATE INDEX "fee_invoices_dueDate_idx" ON "fee_invoices"("dueDate");
+
+-- CreateIndex
+CREATE INDEX "fee_invoices_type_idx" ON "fee_invoices"("type");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "payments_transactionId_key" ON "payments"("transactionId");
@@ -550,25 +582,28 @@ CREATE INDEX "faculty_profiles_employeeId_idx" ON "faculty_profiles"("employeeId
 CREATE INDEX "faculty_profiles_departmentId_idx" ON "faculty_profiles"("departmentId");
 
 -- CreateIndex
-CREATE INDEX "sections_courseId_idx" ON "sections"("courseId");
+CREATE INDEX "program_semesters_programId_idx" ON "program_semesters"("programId");
 
 -- CreateIndex
-CREATE INDEX "sections_semesterId_idx" ON "sections"("semesterId");
+CREATE INDEX "program_semesters_status_idx" ON "program_semesters"("status");
 
 -- CreateIndex
-CREATE INDEX "sections_status_idx" ON "sections"("status");
+CREATE UNIQUE INDEX "program_semesters_programId_semesterNumber_key" ON "program_semesters"("programId", "semesterNumber");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "sections_courseId_semesterId_sectionName_key" ON "sections"("courseId", "semesterId", "sectionName");
+CREATE INDEX "semester_courses_programSemesterId_idx" ON "semester_courses"("programSemesterId");
 
 -- CreateIndex
-CREATE INDEX "section_faculty_sectionId_idx" ON "section_faculty"("sectionId");
+CREATE INDEX "semester_courses_courseId_idx" ON "semester_courses"("courseId");
 
 -- CreateIndex
-CREATE INDEX "section_faculty_facultyId_idx" ON "section_faculty"("facultyId");
+CREATE INDEX "semester_courses_teacherId_idx" ON "semester_courses"("teacherId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "section_faculty_sectionId_facultyId_key" ON "section_faculty"("sectionId", "facultyId");
+CREATE INDEX "semester_courses_status_idx" ON "semester_courses"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "semester_courses_programSemesterId_courseId_key" ON "semester_courses"("programSemesterId", "courseId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
@@ -604,28 +639,34 @@ ALTER TABLE "programs" ADD CONSTRAINT "programs_departmentId_fkey" FOREIGN KEY (
 ALTER TABLE "courses" ADD CONSTRAINT "courses_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "departments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "course_prerequisites" ADD CONSTRAINT "course_prerequisites_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "role_applications" ADD CONSTRAINT "role_applications_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "course_prerequisites" ADD CONSTRAINT "course_prerequisites_prerequisiteId_fkey" FOREIGN KEY ("prerequisiteId") REFERENCES "courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "semester_enrollments" ADD CONSTRAINT "semester_enrollments_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "enrollments" ADD CONSTRAINT "enrollments_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "semester_enrollments" ADD CONSTRAINT "semester_enrollments_programSemesterId_fkey" FOREIGN KEY ("programSemesterId") REFERENCES "program_semesters"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "enrollments" ADD CONSTRAINT "enrollments_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "sections"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "course_enrollments" ADD CONSTRAINT "course_enrollments_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "attendance" ADD CONSTRAINT "attendance_enrollmentId_fkey" FOREIGN KEY ("enrollmentId") REFERENCES "enrollments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "course_enrollments" ADD CONSTRAINT "course_enrollments_semesterCourseId_fkey" FOREIGN KEY ("semesterCourseId") REFERENCES "semester_courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "course_enrollments" ADD CONSTRAINT "course_enrollments_semesterEnrollmentId_fkey" FOREIGN KEY ("semesterEnrollmentId") REFERENCES "semester_enrollments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "attendance" ADD CONSTRAINT "attendance_courseEnrollmentId_fkey" FOREIGN KEY ("courseEnrollmentId") REFERENCES "course_enrollments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "attendance" ADD CONSTRAINT "attendance_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "attendance" ADD CONSTRAINT "attendance_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "sections"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "attendance" ADD CONSTRAINT "attendance_semesterCourseId_fkey" FOREIGN KEY ("semesterCourseId") REFERENCES "semester_courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "exams" ADD CONSTRAINT "exams_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "sections"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "exams" ADD CONSTRAINT "exams_semesterCourseId_fkey" FOREIGN KEY ("semesterCourseId") REFERENCES "semester_courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "results" ADD CONSTRAINT "results_examId_fkey" FOREIGN KEY ("examId") REFERENCES "exams"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -634,13 +675,16 @@ ALTER TABLE "results" ADD CONSTRAINT "results_examId_fkey" FOREIGN KEY ("examId"
 ALTER TABLE "results" ADD CONSTRAINT "results_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "results" ADD CONSTRAINT "results_enrollmentId_fkey" FOREIGN KEY ("enrollmentId") REFERENCES "enrollments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "results" ADD CONSTRAINT "results_courseEnrollmentId_fkey" FOREIGN KEY ("courseEnrollmentId") REFERENCES "course_enrollments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "fee_invoices" ADD CONSTRAINT "fee_invoices_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "student_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "fee_invoices" ADD CONSTRAINT "fee_invoices_semesterId_fkey" FOREIGN KEY ("semesterId") REFERENCES "semesters"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "fee_invoices" ADD CONSTRAINT "fee_invoices_programId_fkey" FOREIGN KEY ("programId") REFERENCES "programs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "fee_invoices" ADD CONSTRAINT "fee_invoices_semesterEnrollmentId_fkey" FOREIGN KEY ("semesterEnrollmentId") REFERENCES "semester_enrollments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "payments" ADD CONSTRAINT "payments_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "fee_invoices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -664,7 +708,7 @@ ALTER TABLE "student_profiles" ADD CONSTRAINT "student_profiles_programId_fkey" 
 ALTER TABLE "student_profiles" ADD CONSTRAINT "student_profiles_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "departments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "student_profiles" ADD CONSTRAINT "student_profiles_currentSemesterId_fkey" FOREIGN KEY ("currentSemesterId") REFERENCES "semesters"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "student_profiles" ADD CONSTRAINT "student_profiles_currentProgramSemesterId_fkey" FOREIGN KEY ("currentProgramSemesterId") REFERENCES "program_semesters"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "faculty_profiles" ADD CONSTRAINT "faculty_profiles_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -673,16 +717,16 @@ ALTER TABLE "faculty_profiles" ADD CONSTRAINT "faculty_profiles_userId_fkey" FOR
 ALTER TABLE "faculty_profiles" ADD CONSTRAINT "faculty_profiles_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "departments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "sections" ADD CONSTRAINT "sections_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "program_semesters" ADD CONSTRAINT "program_semesters_programId_fkey" FOREIGN KEY ("programId") REFERENCES "programs"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "sections" ADD CONSTRAINT "sections_semesterId_fkey" FOREIGN KEY ("semesterId") REFERENCES "semesters"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "semester_courses" ADD CONSTRAINT "semester_courses_programSemesterId_fkey" FOREIGN KEY ("programSemesterId") REFERENCES "program_semesters"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "section_faculty" ADD CONSTRAINT "section_faculty_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "sections"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "semester_courses" ADD CONSTRAINT "semester_courses_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "courses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "section_faculty" ADD CONSTRAINT "section_faculty_facultyId_fkey" FOREIGN KEY ("facultyId") REFERENCES "faculty_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "semester_courses" ADD CONSTRAINT "semester_courses_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "faculty_profiles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

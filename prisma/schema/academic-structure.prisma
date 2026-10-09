@@ -1,6 +1,13 @@
 // ==========================================================
 // Academic Hierarchy: Department -> Program -> Course
-// Plus Semester (the academic term container)
+//
+// NOTE: Course prerequisites are no longer modeled at the
+// individual-course level. Progression is gated per semester
+// instead — see ProgramSemester / SemesterEnrollment in
+// program-semesters.prisma and enrollment-attendance.prisma:
+// a student cannot start ProgramSemester N until their
+// SemesterEnrollment for N-1 is COMPLETED (enforced in the
+// service layer; N=1 has no prior semester to satisfy).
 // ==========================================================
 
 model Department {
@@ -25,16 +32,30 @@ model Department {
 }
 
 model Program {
-  id            String       @id @default(uuid())
-  name          String
-  code          String       @unique
-  departmentId  String
-  department    Department   @relation(fields: [departmentId], references: [id])
-  durationYears Int
-  totalCredits  Int
-  status        EntityStatus @default(ACTIVE)
+  id           String     @id @default(uuid())
+  name         String
+  code         String     @unique
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
 
-  students StudentProfile[]
+  degreeType     DegreeType
+  // Denormalized for quick display ("Semester 3 of 8"); kept in sync by the
+  // service layer with the count of ProgramSemester rows for this program
+  // (BSC = 8, MSC = 4, PHD = 6).
+  totalSemesters Int
+  durationYears  Int
+  totalCredits   Int
+
+  // One-time fee charged when a student is admitted into this program.
+  admissionFee Decimal @db.Decimal(10, 2)
+  // Recurring fee charged for every semester of this program (flat 50,000 by default).
+  semesterFee  Decimal @default(50000) @db.Decimal(10, 2)
+
+  status EntityStatus @default(ACTIVE)
+
+  students         StudentProfile[]
+  programSemesters ProgramSemester[]
+  feeInvoices      FeeInvoice[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -43,6 +64,7 @@ model Program {
   @@index([code])
   @@index([departmentId])
   @@index([status])
+  @@index([degreeType])
   @@map("programs")
 }
 
@@ -56,9 +78,9 @@ model Course {
   department   Department   @relation(fields: [departmentId], references: [id])
   status       CourseStatus @default(DRAFT)
 
-  prerequisitesFor CoursePrerequisite[] @relation("CourseToPrereq")
-  prerequisiteOf   CoursePrerequisite[] @relation("PrereqToCourse")
-  sections         Section[]
+  // Placements of this course into a program's curriculum (one per
+  // program-semester it's taught in, each with its own assigned teacher).
+  semesterCourses SemesterCourse[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -68,42 +90,4 @@ model Course {
   @@index([departmentId])
   @@index([status])
   @@map("courses")
-}
-
-// Composite unique so a course cannot list the same prerequisite twice
-model CoursePrerequisite {
-  id             String @id @default(uuid())
-  courseId       String
-  course         Course @relation("CourseToPrereq", fields: [courseId], references: [id])
-  prerequisiteId String
-  prerequisite   Course @relation("PrereqToCourse", fields: [prerequisiteId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([courseId, prerequisiteId])
-  @@index([courseId])
-  @@index([prerequisiteId])
-  @@map("course_prerequisites")
-}
-
-model Semester {
-  id                String         @id @default(uuid())
-  name              String         @unique
-  startDate         DateTime
-  endDate           DateTime
-  registrationStart DateTime
-  registrationEnd   DateTime
-  status            SemesterStatus @default(UPCOMING)
-
-  sections    Section[]
-  students    StudentProfile[]
-  feeInvoices FeeInvoice[]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([status])
-  @@index([startDate])
-  @@map("semesters")
 }

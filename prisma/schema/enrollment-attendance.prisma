@@ -1,18 +1,56 @@
 // ==========================================================
 // Enrollment / Attendance
+//
+// Two enrollment layers, deliberately separate:
+//   SemesterEnrollment — a student's progression through ONE
+//   ProgramSemester as a whole (status, dates, semester GPA,
+//   and the semester fee invoice hang off this). This is what
+//   gates progression: a student can only move to semester N
+//   once their SemesterEnrollment for N-1 is COMPLETED.
+//
+//   CourseEnrollment — a student taking ONE SemesterCourse
+//   within that program semester (there may be several per
+//   semester). Attendance and Results attach here.
 // ==========================================================
 
-model Enrollment {
-  id         String           @id @default(uuid())
-  studentId  String
-  student    StudentProfile   @relation(fields: [studentId], references: [id])
-  sectionId  String
-  section    Section          @relation(fields: [sectionId], references: [id])
-  status     EnrollmentStatus @default(ENROLLED)
-  enrolledAt DateTime         @default(now())
-  droppedAt  DateTime?
-  finalGrade Grade?
-  gradePoint Float?
+model SemesterEnrollment {
+  id                String                @id @default(uuid())
+  studentId         String
+  student           StudentProfile        @relation(fields: [studentId], references: [id])
+  programSemesterId String
+  programSemester   ProgramSemester       @relation(fields: [programSemesterId], references: [id])
+  status            StudentSemesterStatus @default(NOT_STARTED)
+  enrolledAt        DateTime              @default(now())
+  completedAt       DateTime?
+  semesterGpa       Float?
+
+  courseEnrollments CourseEnrollment[]
+  feeInvoices       FeeInvoice[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([studentId, programSemesterId])
+  @@index([studentId])
+  @@index([programSemesterId])
+  @@index([status])
+  @@map("semester_enrollments")
+}
+
+model CourseEnrollment {
+  id                   String             @id @default(uuid())
+  studentId            String
+  student              StudentProfile     @relation(fields: [studentId], references: [id])
+  semesterCourseId     String
+  semesterCourse       SemesterCourse     @relation(fields: [semesterCourseId], references: [id])
+  semesterEnrollmentId String
+  semesterEnrollment   SemesterEnrollment @relation(fields: [semesterEnrollmentId], references: [id])
+  status               EnrollmentStatus   @default(ENROLLED)
+  enrolledAt           DateTime           @default(now())
+  droppedAt            DateTime?
+  finalGrade           Grade?
+  gradePoint           Float?
 
   attendances Attendance[]
   results     Result[]
@@ -21,33 +59,34 @@ model Enrollment {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([studentId, sectionId])
+  @@unique([studentId, semesterCourseId])
   @@index([studentId])
-  @@index([sectionId])
+  @@index([semesterCourseId])
   @@index([status])
-  @@map("enrollments")
+  @@map("course_enrollments")
 }
 
-// One record per student, per section, per class date
+// One record per student, per semester-course, per class date.
+// Entered by faculty only; students have read-only access at the API layer.
 model Attendance {
-  id           String           @id @default(uuid())
-  enrollmentId String
-  enrollment   Enrollment       @relation(fields: [enrollmentId], references: [id])
-  studentId    String
-  student      StudentProfile   @relation(fields: [studentId], references: [id])
-  sectionId    String
-  section      Section          @relation(fields: [sectionId], references: [id])
-  classDate    DateTime
-  status       AttendanceStatus
-  markedById   String
-  remarks      String?
+  id                 String           @id @default(uuid())
+  courseEnrollmentId String
+  courseEnrollment   CourseEnrollment @relation(fields: [courseEnrollmentId], references: [id])
+  studentId          String
+  student            StudentProfile   @relation(fields: [studentId], references: [id])
+  semesterCourseId   String
+  semesterCourse     SemesterCourse   @relation(fields: [semesterCourseId], references: [id])
+  classDate          DateTime
+  status             AttendanceStatus
+  markedById         String
+  remarks            String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([studentId, sectionId, classDate])
-  @@index([sectionId])
+  @@unique([studentId, semesterCourseId, classDate])
+  @@index([semesterCourseId])
   @@index([studentId])
   @@index([classDate])
   @@index([status])

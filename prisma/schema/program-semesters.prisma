@@ -1,0 +1,62 @@
+// ==========================================================
+// Program Curriculum: ProgramSemester -> SemesterCourse
+//
+// Replaces the old calendar-based Semester + Section model.
+// A ProgramSemester is a fixed slot in a program's curriculum
+// ("Semester 3 of the B.Sc. in CSE"), not a shared university
+// term — every program has its own independent sequence of
+// semesters, sized by its DegreeType (8 / 4 / 6).
+//
+// A SemesterCourse places one Course into one ProgramSemester
+// and assigns the single teacher who conducts it — there are
+// no separate "sections"; one course, one teacher, per program
+// semester.
+// ==========================================================
+
+model ProgramSemester {
+  id             String       @id @default(uuid())
+  programId      String
+  program        Program      @relation(fields: [programId], references: [id])
+  semesterNumber Int
+  name           String // e.g. "Semester 1"
+  status         EntityStatus @default(ACTIVE)
+
+  semesterCourses     SemesterCourse[]
+  semesterEnrollments SemesterEnrollment[]
+  studentsCurrentlyOn StudentProfile[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([programId, semesterNumber])
+  @@index([programId])
+  @@index([status])
+  @@map("program_semesters")
+}
+
+model SemesterCourse {
+  id                String       @id @default(uuid())
+  programSemesterId String
+  programSemester   ProgramSemester @relation(fields: [programSemesterId], references: [id])
+  courseId          String
+  course            Course       @relation(fields: [courseId], references: [id])
+  teacherId         String
+  teacher           FacultyProfile @relation(fields: [teacherId], references: [id])
+  status            EntityStatus @default(ACTIVE)
+
+  courseEnrollments CourseEnrollment[]
+  attendances       Attendance[]
+  exams             Exam[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([programSemesterId, courseId])
+  @@index([programSemesterId])
+  @@index([courseId])
+  @@index([teacherId])
+  @@index([status])
+  @@map("semester_courses")
+}

@@ -1,5 +1,11 @@
 // ==========================================================
 // Finance: Invoices / Payments
+//
+// FeeInvoice.type distinguishes the one-time program ADMISSION
+// fee (linked via programId) from a recurring SEMESTER fee
+// (linked via semesterEnrollmentId). Exactly one of the two
+// link fields is expected to be set, matching `type` — enforced
+// in the service layer/validation, not the database.
 // ==========================================================
 
 model FeeInvoice {
@@ -7,12 +13,21 @@ model FeeInvoice {
   invoiceNumber String         @unique
   studentId     String
   student       StudentProfile @relation(fields: [studentId], references: [id])
-  semesterId    String?
-  semester      Semester?      @relation(fields: [semesterId], references: [id])
-  description   String
-  amount        Decimal        @db.Decimal(10, 2)
-  dueDate       DateTime
-  status        InvoiceStatus  @default(PENDING)
+
+  type InvoiceType
+
+  // Set when type = ADMISSION
+  programId String?
+  program   Program? @relation(fields: [programId], references: [id])
+
+  // Set when type = SEMESTER
+  semesterEnrollmentId String?
+  semesterEnrollment   SemesterEnrollment? @relation(fields: [semesterEnrollmentId], references: [id])
+
+  description String
+  amount      Decimal       @db.Decimal(10, 2)
+  dueDate     DateTime
+  status      InvoiceStatus @default(PENDING)
 
   payments Payment[]
 
@@ -23,6 +38,7 @@ model FeeInvoice {
   @@index([studentId])
   @@index([status])
   @@index([dueDate])
+  @@index([type])
   @@map("fee_invoices")
 }
 
