@@ -5,10 +5,34 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 import { StudentController } from "./student.controller.js";
 import {
   StudentCreateValidation,
+  StudentSelfProfileValidation,
   StudentUpdateValidation,
 } from "./student.validation.js";
 
 const router = Router();
+
+router.get(
+  "/me",
+  auth(Role.STUDENT),
+  StudentController.getMyStudentProfile,
+);
+router.post(
+  "/me",
+  auth(Role.STUDENT),
+  validateRequest(StudentSelfProfileValidation),
+  StudentController.createMyStudentProfile,
+);
+router.patch(
+  "/me",
+  auth(Role.STUDENT),
+  validateRequest(StudentSelfProfileValidation),
+  StudentController.updateMyStudentProfile,
+);
+router.delete(
+  "/me",
+  auth(Role.STUDENT),
+  StudentController.deleteMyStudentProfile,
+);
 
 router.post(
   "/",
@@ -19,7 +43,7 @@ router.post(
 
 router.get(
   "/:studentId",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY),
   StudentController.getStudentProfile,
 );
 

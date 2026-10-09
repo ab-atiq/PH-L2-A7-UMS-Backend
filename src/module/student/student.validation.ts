@@ -25,3 +25,11 @@ export const StudentUpdateValidation = StudentCreateValidation.omit({
   userId: id.optional(),
   studentId: z.string().trim().min(2).max(50).optional(),
 });
+
+export const StudentSelfProfileValidation = StudentCreateValidation.pick({
+  gender: true,
+  dateOfBirth: true,
+  address: true,
+  guardianName: true,
+  guardianPhone: true,
+});

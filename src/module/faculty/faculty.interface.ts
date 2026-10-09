@@ -34,4 +34,7 @@ export type FacultyUpdateData = {
   departmentId?: string | null;
   userId?: string;
   joinDate?: Date | null;
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
 };

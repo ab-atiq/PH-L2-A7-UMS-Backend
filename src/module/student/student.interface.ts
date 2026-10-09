@@ -18,3 +18,8 @@ export type StudentCreateData = {
 export type StudentUpdateData = Partial<Omit<StudentCreateData, "userId">> & {
   userId?: string;
 };
+
+export type StudentSelfProfileData = Pick<
+  StudentCreateData,
+  "gender" | "dateOfBirth" | "address" | "guardianName" | "guardianPhone"
+>;

@@ -246,6 +246,24 @@ const facultyMutationSelect = {
   department: { select: { id: true, name: true, code: true, status: true } },
 } as const;
 
+const listAvailableFacultyUsers = async () =>
+  prisma.user.findMany({
+    where: {
+      role: Role.FACULTY,
+      deletedAt: null,
+      facultyProfile: null,
+    },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
+      status: true,
+    },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+  });
+
 const audit = async (
   actorId: string,
   action: AuditAction,
@@ -369,10 +387,27 @@ const updateFacultyProfile = async (
     }
   }
 
-  const faculty = await prisma.facultyProfile.update({
-    where: { employeeId },
-    data,
-    select: facultyMutationSelect,
+  const { firstName, lastName, phone, ...profileData } = data;
+  const faculty = await prisma.$transaction(async (transaction) => {
+    const currentFaculty = await transaction.facultyProfile.findUniqueOrThrow({
+      where: { employeeId },
+      select: { id: true, userId: true },
+    });
+    if (firstName !== undefined || lastName !== undefined || phone !== undefined) {
+      await transaction.user.update({
+        where: { id: data.userId ?? currentFaculty.userId },
+        data: {
+          ...(firstName === undefined ? {} : { firstName }),
+          ...(lastName === undefined ? {} : { lastName }),
+          ...(phone === undefined ? {} : { phone }),
+        },
+      });
+    }
+    return transaction.facultyProfile.update({
+      where: { employeeId },
+      data: profileData,
+      select: facultyMutationSelect,
+    });
   });
 
   await audit(actorId, AuditAction.UPDATE, faculty.id);
@@ -401,6 +436,7 @@ const deleteFacultyProfile = async (employeeId: string, actorId: string) => {
 export const FacultyService = {
   listFacultySearch,
   listFacultyFilter,
+  listAvailableFacultyUsers,
   getFacultyById,
   createFacultyProfile,
   updateFacultyProfile,

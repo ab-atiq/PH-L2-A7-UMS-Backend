@@ -11,6 +11,12 @@ import {
 const router = Router();
 
 router.get(
+  "/available-users",
+  auth(Role.ADMIN),
+  FacultyController.listAvailableFacultyUsers,
+);
+
+router.get(
   "/",
   auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
   FacultyController.listFacultySearch,

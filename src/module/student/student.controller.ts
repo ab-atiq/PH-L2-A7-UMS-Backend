@@ -61,9 +61,65 @@ const deleteStudentProfile = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMyStudentProfile = catchAsync(async (req: Request, res: Response) => {
+  const data = await StudentService.getMyStudentProfile(actorId(req));
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Student profile fetched successfully",
+    data,
+  });
+});
+
+const createMyStudentProfile = catchAsync(
+  async (req: Request, res: Response) => {
+    const data = await StudentService.createMyStudentProfile(
+      req.body,
+      actorId(req),
+    );
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      success: true,
+      message: "Student profile created successfully",
+      data,
+    });
+  },
+);
+
+const updateMyStudentProfile = catchAsync(
+  async (req: Request, res: Response) => {
+    const data = await StudentService.updateMyStudentProfile(
+      req.body,
+      actorId(req),
+    );
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Student profile updated successfully",
+      data,
+    });
+  },
+);
+
+const deleteMyStudentProfile = catchAsync(
+  async (req: Request, res: Response) => {
+    const data = await StudentService.deleteMyStudentProfile(actorId(req));
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Student profile deleted successfully",
+      data,
+    });
+  },
+);
+
 export const StudentController = {
   createStudentProfile,
   getStudentProfile,
   updateStudentProfile,
   deleteStudentProfile,
+  getMyStudentProfile,
+  createMyStudentProfile,
+  updateMyStudentProfile,
+  deleteMyStudentProfile,
 };

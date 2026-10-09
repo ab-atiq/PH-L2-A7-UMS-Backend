@@ -19,6 +19,9 @@ export const FacultyUpdateValidation = z.object({
   departmentId: id.nullable().optional(),
   userId: id.optional(),
   joinDate: z.coerce.date().nullable().optional(),
+  firstName: z.string().trim().min(2).max(50).optional(),
+  lastName: z.string().trim().min(2).max(50).optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
 });
 
 export const FacultyEmployeeIdValidation = z.object({ employeeId });

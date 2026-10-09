@@ -27,6 +27,18 @@ const listFacultyFilter = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const listAvailableFacultyUsers = catchAsync(
+  async (_req: Request, res: Response) => {
+    const result = await FacultyService.listAvailableFacultyUsers();
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Available faculty accounts fetched successfully",
+      data: result,
+    });
+  },
+);
+
 const singleFaculty = catchAsync(async (req: Request, res: Response) => {
   const result = await FacultyService.getFacultyById(
     String(req.params.employeeId),
@@ -97,6 +109,7 @@ const deleteFacultyProfile = catchAsync(async (req: Request, res: Response) => {
 export const FacultyController = {
   listFacultySearch,
   listFacultyFilter,
+  listAvailableFacultyUsers,
   singleFaculty,
   createFacultyProfile,
   updateFacultyProfile,

@@ -7,6 +7,7 @@ import {
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../utils/AppError.js";
 import type {
+  StudentSelfProfileData,
   StudentCreateData,
   StudentUpdateData,
 } from "./student.interface.js";
@@ -157,6 +158,93 @@ const getStudentProfile = async (studentId: string) => {
   return profile;
 };
 
+const getMyStudentProfile = async (userId: string) => {
+  const profile = await prisma.studentProfile.findFirst({
+    where: { userId, deletedAt: null },
+    select: studentSelect,
+  });
+
+  if (!profile) {
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+  }
+  return profile;
+};
+
+const createMyStudentProfile = async (
+  data: StudentSelfProfileData,
+  userId: string,
+) => {
+  await ensureStudentUser(userId);
+
+  const existing = await prisma.studentProfile.findUnique({
+    where: { userId },
+    select: { id: true, studentId: true, deletedAt: true },
+  });
+  if (existing && !existing.deletedAt) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "A student profile already exists for this account",
+    );
+  }
+
+  const profile = existing
+    ? await prisma.studentProfile.update({
+        where: { userId },
+        data: { ...data, deletedAt: null },
+        select: studentSelect,
+      })
+    : await prisma.studentProfile.create({
+        data: { ...data, userId, studentId: `STU-${userId}` },
+        select: studentSelect,
+      });
+
+  await audit(
+    userId,
+    existing ? AuditAction.UPDATE : AuditAction.CREATE,
+    profile.id,
+  );
+  return profile;
+};
+
+const updateMyStudentProfile = async (
+  data: StudentSelfProfileData,
+  userId: string,
+) => {
+  const existing = await prisma.studentProfile.findFirst({
+    where: { userId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) {
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+  }
+
+  const profile = await prisma.studentProfile.update({
+    where: { userId },
+    data,
+    select: studentSelect,
+  });
+  await audit(userId, AuditAction.UPDATE, profile.id);
+  return profile;
+};
+
+const deleteMyStudentProfile = async (userId: string) => {
+  const existing = await prisma.studentProfile.findFirst({
+    where: { userId, deletedAt: null },
+    select: { id: true, studentId: true },
+  });
+  if (!existing) {
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+  }
+
+  const profile = await prisma.studentProfile.update({
+    where: { userId },
+    data: { deletedAt: new Date() },
+    select: studentSelect,
+  });
+  await audit(userId, AuditAction.DELETE, profile.id);
+  return profile;
+};
+
 const updateStudentProfile = async (
   studentId: string,
   data: StudentUpdateData,
@@ -245,4 +333,8 @@ export const StudentService = {
   getStudentProfile,
   updateStudentProfile,
   deleteStudentProfile,
+  getMyStudentProfile,
+  createMyStudentProfile,
+  updateMyStudentProfile,
+  deleteMyStudentProfile,
 };
