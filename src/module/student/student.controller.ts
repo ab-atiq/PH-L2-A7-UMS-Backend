@@ -86,6 +86,21 @@ const getMyStudentProfile = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const enrollMyStudentProfileInProgram = catchAsync(
+  async (req: Request, res: Response) => {
+    const data = await StudentService.enrollMyStudentProfileInProgram(
+      actorId(req),
+      req.body.programId,
+    );
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Program enrollment completed successfully",
+      data,
+    });
+  },
+);
+
 const createMyStudentProfile = catchAsync(
   async (req: Request, res: Response) => {
     const data = await StudentService.createMyStudentProfile(
@@ -135,6 +150,7 @@ export const StudentController = {
   updateStudentProfile,
   deleteStudentProfile,
   getMyStudentProfile,
+  enrollMyStudentProfileInProgram,
   createMyStudentProfile,
   updateMyStudentProfile,
   deleteMyStudentProfile,

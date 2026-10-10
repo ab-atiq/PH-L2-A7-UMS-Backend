@@ -2,15 +2,16 @@
 
 ## STUDENT
 
-1. **Register/Login** → verify email → submit a student role application with an active program selection.
-2. **Admin approval** → account becomes a student and receives a student profile linked to that program.
-3. **View curriculum** — see the program's full semester list and each semester's courses (`GET /programs/:id/semesters`) up front.
-4. **Request Semester 1 enrollment** → the system creates the admission invoice (`FeeInvoice.type=ADMISSION`) if needed; pay it, then retry enrollment.
-5. **Pay the semester fee** → retry enrollment; the system activates the semester and auto-creates a `CourseEnrollment` for each assigned course.
-6. Through the semester: **view** class schedule, **view (read-only)** attendance marked by faculty, **view (read-only)** exams and — once published — **results**.
-7. **Semester ends** → publishing all final course results automatically calculates GPA and completes the semester.
-8. **Next semester unlocks** only after the previous one is `COMPLETED` → repeat step 5.
-9. Anytime: **view transcript** (all completed semesters + cumulative GPA), **view/pay invoices**, **view notifications**.
+1. **Register/Login** → verify email → submit a student role application.
+2. **Admin approval** → account becomes a student and receives a student profile.
+3. **Select a program** from the student dashboard after approval; the selected program determines the curriculum and fees.
+4. **View curriculum** — see the program's full semester list and each semester's courses (`GET /programs/:id/semesters`) up front.
+5. Open the **program detail** to review and pay the admission fee by bKash or Stripe.
+6. Open **Semester 1** to review courses and fee, then pay by bKash or Stripe. Retry semester enrollment after payment; the system activates the semester and auto-creates a `CourseEnrollment` for each assigned course.
+7. Through the semester: **view** class schedule, **view (read-only)** attendance marked by faculty, **view (read-only)** exams and — once published — **results**.
+8. **Semester ends** → publishing all final course results automatically calculates GPA and completes the semester.
+9. **Next semester unlocks** only after the previous one is `COMPLETED` → review and pay its fee, then enroll.
+10. Anytime: **view transcript** (all completed semesters + cumulative GPA), **view/pay invoices**, **view notifications**.
 
 Student can never write attendance, exams, or results — view only.
 

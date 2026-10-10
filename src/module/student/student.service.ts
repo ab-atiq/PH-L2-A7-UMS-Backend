@@ -18,6 +18,9 @@ const studentSelect = {
   id: true,
   studentId: true,
   userId: true,
+  programId: true,
+  departmentId: true,
+  currentProgramSemesterId: true,
   batchYear: true,
   gender: true,
   dateOfBirth: true,
@@ -272,6 +275,73 @@ const getMyStudentProfile = async (userId: string) => {
   return profile;
 };
 
+const enrollMyStudentProfileInProgram = async (
+  userId: string,
+  programId: string,
+) =>
+  prisma.$transaction(async (tx) => {
+    const student = await tx.studentProfile.findFirst({
+      where: { userId, deletedAt: null },
+      select: {
+        id: true,
+        programId: true,
+        admissionDate: true,
+      },
+    });
+    if (!student)
+      throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+
+    const program = await tx.program.findFirst({
+      where: {
+        id: programId,
+        deletedAt: null,
+        status: EntityStatus.ACTIVE,
+        department: {
+          deletedAt: null,
+          status: EntityStatus.ACTIVE,
+        },
+      },
+      select: { id: true, departmentId: true },
+    });
+    if (!program)
+      throw new AppError(httpStatus.NOT_FOUND, "Active program not found");
+
+    if (student.programId !== program.id) {
+      const [semesterEnrollmentCount, invoiceCount] = await Promise.all([
+        tx.semesterEnrollment.count({
+          where: { studentId: student.id, deletedAt: null },
+        }),
+        tx.feeInvoice.count({
+          where: { studentId: student.id, deletedAt: null },
+        }),
+      ]);
+      if (semesterEnrollmentCount || invoiceCount)
+        throw new AppError(
+          httpStatus.CONFLICT,
+          "A program cannot be changed after enrollment or invoicing has started",
+        );
+    }
+
+    const profile = await tx.studentProfile.update({
+      where: { id: student.id },
+      data: {
+        programId: program.id,
+        departmentId: program.departmentId,
+        admissionDate: student.admissionDate ?? new Date(),
+      },
+      select: studentSelect,
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        action: student.programId ? AuditAction.UPDATE : AuditAction.CREATE,
+        entity: "StudentProgramEnrollment",
+        entityId: program.id,
+      },
+    });
+    return profile;
+  });
+
 const createMyStudentProfile = async (
   data: StudentSelfProfileData,
   userId: string,
@@ -456,6 +526,7 @@ export const StudentService = {
   updateStudentProfile,
   deleteStudentProfile,
   getMyStudentProfile,
+  enrollMyStudentProfileInProgram,
   createMyStudentProfile,
   updateMyStudentProfile,
   deleteMyStudentProfile,

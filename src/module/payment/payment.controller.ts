@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import httpStatus from "http-status";
+import config from "../../config/index.js";
 import { AppError } from "../../utils/AppError.js";
 import { catchAsync } from "../../utils/catchAsync.js";
 import { sendResponse } from "../../utils/sendResponse.js";
@@ -67,24 +68,20 @@ const checkoutSuccess = catchAsync(async (req, res) => {
   const sessionId = req.query.session_id as string | undefined;
   if (!sessionId)
     throw new AppError(httpStatus.BAD_REQUEST, "Missing Stripe session id");
-  return sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: "Payment completed successfully",
-    data: await PaymentService.completeCheckout(sessionId),
-  });
+  const payment = await PaymentService.completeCheckout(sessionId);
+  return res.redirect(
+    `${config.frontend_url}/payment-result?paymentId=${encodeURIComponent(payment.id)}`,
+  );
 });
 
 const checkoutCancel = catchAsync(async (req, res) => {
   const sessionId = req.query.session_id as string | undefined;
   if (!sessionId)
     throw new AppError(httpStatus.BAD_REQUEST, "Missing Stripe session id");
-  return sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: false,
-    message: "Payment was cancelled",
-    data: await PaymentService.cancelCheckout(sessionId),
-  });
+  const payment = await PaymentService.cancelCheckout(sessionId);
+  return res.redirect(
+    `${config.frontend_url}/payment-result?paymentId=${encodeURIComponent(payment.id)}`,
+  );
 });
 
 const getById = catchAsync(async (req, res) => {

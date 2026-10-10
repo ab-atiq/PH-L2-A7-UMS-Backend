@@ -668,7 +668,7 @@
     },
     {
       "name": "2.1-Student Profiles",
-      "description": "Student profile lifecycle: Admin-managed student profile creation and student self-service read.",
+      "description": "Student profile lifecycle, including student self-service program enrollment.",
       "item": [
         {
           "name": "Create Student Profile",
@@ -711,6 +711,34 @@
               "path": ["students"]
             },
             "description": "Requires ADMIN token. targetUserId must belong to an active STUDENT user."
+          },
+          "response": []
+        },
+        {
+          "name": "Enroll in Program",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"programId\": \"{{programId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/students/me/program",
+              "host": ["{{baseUrl}}"],
+              "path": ["students", "me", "program"]
+            },
+            "description": "Requires STUDENT token. Selects an active program before semester enrollment or invoicing begins."
           },
           "response": []
         },
@@ -1651,7 +1679,7 @@
     },
     {
       "name": "8.Semester Enrollment",
-      "description": "A student's progress through one whole ProgramSemester. Gates progression to the next semester.",
+      "description": "A student's semester enrollment progress. The next semester requires the previous semester to be COMPLETED.",
       "item": [
         {
           "name": "Enroll in a Semester",
@@ -1688,11 +1716,11 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/semester-enrollments",
+              "raw": "{{baseUrl}}/enrollments",
               "host": ["{{baseUrl}}"],
-              "path": ["semester-enrollments"]
+              "path": ["enrollments"]
             },
-            "description": "Validates: admission fee paid, previous semester COMPLETED (skipped for sem 1). Auto-creates CourseEnrollment for each SemesterCourse. Auto-saves semesterEnrollmentId."
+            "description": "Requires STUDENT token. Starts the selected semester. Returns paymentRequired and invoiceId until admission and semester fees are paid; after payment retry to activate and auto-enroll the semester courses."
           },
           "response": []
         },
@@ -1702,71 +1730,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/semester-enrollments/my?page=1&limit=10&status=IN_PROGRESS",
+              "raw": "{{baseUrl}}/enrollments/my-semesters",
               "host": ["{{baseUrl}}"],
-              "path": ["semester-enrollments", "my"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                },
-                {
-                  "key": "status",
-                  "value": "IN_PROGRESS"
-                }
-              ]
+              "path": ["enrollments", "my-semesters"]
             },
-            "description": "Returns authenticated student's semester enrollment history."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Semester Enrollment by ID",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/semester-enrollments/{{semesterEnrollmentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["semester-enrollments", "{{semesterEnrollmentId}}"]
-            },
-            "description": "Includes nested course enrollments and semester GPA once completed."
-          },
-          "response": []
-        },
-        {
-          "name": "Mark Semester Completed",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/semester-enrollments/{{semesterEnrollmentId}}/complete",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "semester-enrollments",
-                "{{semesterEnrollmentId}}",
-                "complete"
-              ]
-            },
-            "description": "Admin action once all results for the semester are published; computes semesterGpa and unlocks next semester."
+            "description": "Requires STUDENT token. Returns semester statuses and related invoices in semester order."
           },
           "response": []
         }
@@ -1782,9 +1750,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/course-enrollments/my?page=1&limit=10&semesterEnrollmentId={{semesterEnrollmentId}}",
+              "raw": "{{baseUrl}}/enrollments?page=1&limit=10",
               "host": ["{{baseUrl}}"],
-              "path": ["course-enrollments", "my"],
+              "path": ["enrollments"],
               "query": [
                 {
                   "key": "page",
@@ -1793,42 +1761,10 @@
                 {
                   "key": "limit",
                   "value": "10"
-                },
-                {
-                  "key": "semesterEnrollmentId",
-                  "value": "{{semesterEnrollmentId}}"
                 }
               ]
             },
-            "description": "Returns courses enrolled in this semester."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Course Enrollment by ID",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/course-enrollments/{{courseEnrollmentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["course-enrollments", "{{courseEnrollmentId}}"]
-            },
-            "description": "Details of specific course enrollment."
-          },
-          "response": []
-        },
-        {
-          "name": "Drop a Course",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/course-enrollments/{{courseEnrollmentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["course-enrollments", "{{courseEnrollmentId}}"]
-            },
-            "description": "Drops this course while keeping the rest of the semester enrollment intact."
+            "description": "Returns course enrollment records for the authenticated student, faculty assignments, or all records for admin."
           },
           "response": []
         }
@@ -2432,7 +2368,7 @@
     },
     {
       "name": "15.Payments",
-      "description": "Real payment gateway integration (Stripe, bKash, SSLCommerz).",
+      "description": "Payment sessions for invoice settlement using Stripe or bKash.",
       "item": [
         {
           "name": "Initiate Payment",
@@ -2475,7 +2411,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["payments", "initiate"]
             },
-            "description": "Creates a gateway session. Auto-saves paymentId and transactionId."
+            "description": "Choose STRIPE or BKASH. Returns the gateway redirect URL and payment record."
           },
           "response": []
         },

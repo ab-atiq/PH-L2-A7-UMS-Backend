@@ -272,6 +272,36 @@ const createEnrollment = async (userId: string, data: EnrollmentCreateData) =>
   });
 
 const listEnrollments = pageEnrollments;
+const listMySemesterEnrollments = async (userId: string) => {
+  const student = await prisma.studentProfile.findFirst({
+    where: { userId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!student)
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+
+  return prisma.semesterEnrollment.findMany({
+    where: { studentId: student.id, deletedAt: null },
+    include: {
+      programSemester: {
+        select: { id: true, name: true, semesterNumber: true, programId: true },
+      },
+      feeInvoices: {
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          amount: true,
+          description: true,
+          dueDate: true,
+        },
+      },
+    },
+    orderBy: { programSemester: { semesterNumber: "asc" } },
+  });
+};
+
 const dropEnrollment = async () => {
   throw new AppError(
     httpStatus.FORBIDDEN,
@@ -281,6 +311,7 @@ const dropEnrollment = async () => {
 
 export const EnrollmentService = {
   listEnrollments,
+  listMySemesterEnrollments,
   createEnrollment,
   dropEnrollment,
 };

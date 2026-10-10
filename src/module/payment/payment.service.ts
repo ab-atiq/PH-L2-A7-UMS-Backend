@@ -270,7 +270,9 @@ const handleBkashCallback = async (query: Record<string, unknown>) => {
   });
   if (!payment) throw new AppError(httpStatus.NOT_FOUND, "Payment not found");
   if (payment.status === PaymentStatus.SUCCESS) {
-    return { redirectUrl: `${config.frontend_url}/payments?status=success` };
+    return {
+      redirectUrl: `${config.frontend_url}/payment-result?paymentId=${encodeURIComponent(payment.id)}`,
+    };
   }
 
   if (status !== "success") {
@@ -281,7 +283,7 @@ const handleBkashCallback = async (query: Record<string, unknown>) => {
       data: { status: paymentStatus, gatewayResponse: query as any },
     });
     return {
-      redirectUrl: `${config.frontend_url}/payments?status=${status === "cancel" ? "cancel" : "failed"}`,
+      redirectUrl: `${config.frontend_url}/payment-result?paymentId=${encodeURIComponent(payment.id)}`,
     };
   }
 
@@ -335,7 +337,9 @@ const handleBkashCallback = async (query: Record<string, unknown>) => {
     });
   });
 
-  return { redirectUrl: `${config.frontend_url}/payments?status=success` };
+  return {
+    redirectUrl: `${config.frontend_url}/payment-result?paymentId=${encodeURIComponent(payment.id)}`,
+  };
 };
 
 const createBkashGatewayPayment = async (
@@ -438,12 +442,27 @@ const initiate = async (userId: string, data: InitiatePaymentData) => {
 
   const invoice = await prisma.feeInvoice.findFirst({
     where: { id: data.invoiceId, studentId: student.id, deletedAt: null },
-    include: { payments: { where: { status: PaymentStatus.SUCCESS } } },
+    include: {
+      payments: {
+        where: {
+          status: {
+            in: [
+              PaymentStatus.SUCCESS,
+              PaymentStatus.INITIATED,
+              PaymentStatus.PENDING,
+            ],
+          },
+        },
+      },
+    },
   });
   if (!invoice) {
     throw new AppError(httpStatus.NOT_FOUND, "Invoice not found");
   }
-  if (invoice.status === InvoiceStatus.PAID || invoice.payments.length) {
+  if (
+    invoice.status === InvoiceStatus.PAID ||
+    invoice.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)
+  ) {
     throw new AppError(httpStatus.CONFLICT, "Invoice is already paid");
   }
   if (invoice.status === InvoiceStatus.CANCELLED) {
@@ -451,6 +470,21 @@ const initiate = async (userId: string, data: InitiatePaymentData) => {
   }
   if (new Date() > invoice.dueDate) {
     throw new AppError(httpStatus.BAD_REQUEST, "Invoice is past due");
+  }
+  if (
+    invoice.payments.some(
+      (payment) =>
+        payment.status === PaymentStatus.INITIATED ||
+        payment.status === PaymentStatus.PENDING,
+    )
+  ) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "A payment is already in progress for this invoice",
+    );
+  }
+  if (data.gateway === PaymentGateway.STRIPE) {
+    return createCheckoutSession(userId, invoice.id);
   }
   if (data.gateway !== PaymentGateway.BKASH) {
     throw new AppError(

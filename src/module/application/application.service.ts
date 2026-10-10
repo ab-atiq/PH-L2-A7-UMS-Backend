@@ -129,50 +129,10 @@ const updateApplicationStatus = async (
           select: { id: true },
         });
         if (!existingProfile) {
-          const programInterest =
-            await transaction.roleApplication.findUniqueOrThrow({
-              where: { id: applicationId },
-              select: { programInterest: true },
-            });
-          if (!programInterest.programInterest) {
-            throw new AppError(
-              httpStatus.BAD_REQUEST,
-              "Student application is missing a program selection",
-            );
-          }
-          const program = await transaction.program.findFirst({
-            where: {
-              deletedAt: null,
-              status: EntityStatus.ACTIVE,
-              OR: [
-                {
-                  code: {
-                    equals: programInterest.programInterest,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  name: {
-                    equals: programInterest.programInterest,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            },
-            select: { id: true, departmentId: true },
-          });
-          if (!program) {
-            throw new AppError(
-              httpStatus.BAD_REQUEST,
-              "Select an active program before approving this student application",
-            );
-          }
           await transaction.studentProfile.create({
             data: {
               userId: application.userId,
               studentId: `STU-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
-              programId: program.id,
-              departmentId: program.departmentId,
               admissionDate: new Date(),
             },
           });
@@ -297,7 +257,9 @@ const createRoleApplication = async (
       ? {
           userId,
           requestedRole: payload.requestedRole,
-          programInterest: payload.programInterest,
+          ...(payload.programInterest
+            ? { programInterest: payload.programInterest }
+            : {}),
           statement: payload.statement,
         }
       : {

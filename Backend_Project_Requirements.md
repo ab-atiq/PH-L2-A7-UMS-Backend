@@ -91,8 +91,8 @@ The matrix below covers the three university roles; `USER` accounts have the lim
 
 1. **Account Registration**: Candidate registers via `POST /api/v1/auth/register`. The account starts with role `USER` and status `PENDING_VERIFICATION`; the system sends an email OTP.
 2. **Email Verification**: Candidate verifies email via `POST /api/v1/auth/verify-email`. The account becomes active.
-3. **Role Application**: The verified user applies for `STUDENT` or `FACULTY` through `/api/v1/applications`, selecting an active program or department.
-4. **Approval and Profile Setup**: An administrator reviews the application. Approval transactionally changes the user role and creates the matching student or faculty profile using the selected active catalog record.
+3. **Role Application**: The verified user applies for `STUDENT` or `FACULTY` through `/api/v1/applications`; faculty applicants select an active department.
+4. **Approval and Profile Setup**: An administrator reviews the application. Approval transactionally changes the user role and creates the matching student or faculty profile. Approved students select their active program from the student dashboard via `POST /api/v1/students/me/program`.
 
 ### Workflow 2: Academic Setup & Curriculum Building (Admin)
 
@@ -104,7 +104,7 @@ The matrix below covers the three university roles; `USER` accounts have the lim
 
 ### Workflow 3: Program Admission & Admission Invoicing
 
-1. The approved student is assigned a program during role approval. On the first Semester 1 enrollment request, the backend creates an admission invoice (`FeeInvoice.type = ADMISSION`) for `program.admissionFee` and returns `paymentRequired` with the invoice ID.
+1. The approved student selects a program from the student dashboard. On the first Semester 1 enrollment request, the backend creates an admission invoice (`FeeInvoice.type = ADMISSION`) for `program.admissionFee` and returns `paymentRequired` with the invoice ID.
 2. Student initiates payment (`POST /api/v1/payments/initiate`) via the configured payment gateway.
 3. Gateway webhook (`POST /api/v1/payments/webhook`) confirms payment: invoice marked `PAID`, `Payment.status = SUCCESS`.
 4. Admission fee payment unlocks eligibility for **Semester 1 Enrollment**.

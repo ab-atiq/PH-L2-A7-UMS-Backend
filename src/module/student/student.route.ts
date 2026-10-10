@@ -5,6 +5,7 @@ import { validateRequest } from "../../middleware/validateRequest.js";
 import { StudentController } from "./student.controller.js";
 import {
   StudentCreateValidation,
+  StudentProgramEnrollmentValidation,
   StudentSelfProfileValidation,
   StudentListValidation,
   StudentUpdateValidation,
@@ -20,6 +21,12 @@ router.get(
 );
 
 router.get("/me", auth(Role.STUDENT), StudentController.getMyStudentProfile);
+router.post(
+  "/me/program",
+  auth(Role.STUDENT),
+  validateRequest(StudentProgramEnrollmentValidation),
+  StudentController.enrollMyStudentProfileInProgram,
+);
 router.post(
   "/me",
   auth(Role.STUDENT),

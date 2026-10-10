@@ -11,6 +11,12 @@ import {
 const router = Router();
 
 router.get(
+  "/my-semesters",
+  auth(Role.STUDENT),
+  EnrollmentController.listMySemesterEnrollments,
+);
+
+router.get(
   "/",
   auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
   validateRequest(EnrollmentListValidation),

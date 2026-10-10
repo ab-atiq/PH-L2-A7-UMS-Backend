@@ -60,7 +60,20 @@ const createEnrollment = catchAsync(async (req, res) => {
   });
 });
 
+const listMySemesterEnrollments = catchAsync(async (req, res) => {
+  const result = await EnrollmentService.listMySemesterEnrollments(
+    user(req).userId,
+  );
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Semester enrollments fetched successfully",
+    data: result,
+  });
+});
+
 export const EnrollmentController = {
   listEnrollments,
   createEnrollment,
+  listMySemesterEnrollments,
 };
