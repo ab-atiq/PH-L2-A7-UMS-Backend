@@ -5,7 +5,7 @@ import type {
 } from "../../../generated/prisma/enums.js";
 
 export type ExamData = {
-  sectionId: string;
+  semesterCourseId: string;
   examType: ExamType;
   title?: string | null;
   examDate: Date;
@@ -15,7 +15,7 @@ export type ExamData = {
 };
 
 export type ExamUpdateData = Partial<ExamData>;
-export type ExamListQuery = { sectionId?: string };
+export type ExamListQuery = { semesterCourseId?: string };
 export type ExamListContext = {
   userId: string;
   role: Role;

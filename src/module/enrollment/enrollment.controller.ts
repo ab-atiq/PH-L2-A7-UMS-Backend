@@ -28,13 +28,9 @@ const listEnrollments = catchAsync(async (req, res) => {
   if (typeof req.query.status === "string") {
     query.status = req.query.status;
   }
-  if (typeof req.query.sectionId === "string") {
-    query.sectionId = req.query.sectionId;
+  if (typeof req.query.semesterCourseId === "string") {
+    query.semesterCourseId = req.query.semesterCourseId;
   }
-  if (req.query.sortOrder === "asc" || req.query.sortOrder === "desc") {
-    query.sortOrder = req.query.sortOrder;
-  }
-
   const result = await EnrollmentService.listEnrollments({
     userId: current.userId,
     role: current.role,
@@ -64,22 +60,7 @@ const createEnrollment = catchAsync(async (req, res) => {
   });
 });
 
-const dropEnrollment = catchAsync(async (req, res) =>
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: "Enrollment dropped successfully",
-    data: await EnrollmentService.dropEnrollment(
-      user(req).userId,
-      String(req.params.id),
-    ),
-  }),
-);
-
 export const EnrollmentController = {
   listEnrollments,
-
   createEnrollment,
-
-  dropEnrollment,
 };

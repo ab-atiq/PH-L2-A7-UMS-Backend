@@ -2,9 +2,11 @@ import httpStatus from "http-status";
 import {
   AuditAction,
   EnrollmentStatus,
+  ExamType,
   Grade,
   ResultStatus,
   Role,
+  StudentSemesterStatus,
 } from "../../../generated/prisma/enums.js";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../utils/AppError.js";
@@ -32,126 +34,281 @@ const gradeFor = (percentage: number) =>
                     : percentage >= 45
                       ? { grade: Grade.D, gradePoint: 1 }
                       : { grade: Grade.F, gradePoint: 0 };
-const ensureFacultyAssignment = async (sectionId: string, userId: string) => {
+
+const ensureCourseAccess = async (semesterCourseId: string, userId: string) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (user?.role === Role.ADMIN) return;
   const faculty = await prisma.facultyProfile.findFirst({
-    where: { userId, deletedAt: null },
+    where: {
+      userId,
+      deletedAt: null,
+      semesterCourses: { some: { id: semesterCourseId, deletedAt: null } },
+    },
     select: { id: true },
   });
   if (!faculty)
-    throw new AppError(httpStatus.NOT_FOUND, "Faculty profile not found");
-  // const assignment = await prisma.sectionFaculty.findUnique({
-  //   where: { sectionId_facultyId: { sectionId, facultyId: faculty.id } },
-  //   select: { id: true },
-  // });
-  // if (!assignment)
-  //   throw new AppError(
-  //     httpStatus.FORBIDDEN,
-  //     "Faculty is not assigned to this section",
-  //   );
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "You are not assigned to this course",
+    );
 };
-const getStudent = async (userId: string) => {
-  const student = await prisma.studentProfile.findFirst({
-    where: { userId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!student)
-    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
-  return student;
-};
-const audit = async (actorId: string, action: AuditAction, entityId: string) =>
-  prisma.auditLog.create({
-    data: { actorId, action, entity: "Result", entityId },
-  });
+
 const submit = async (userId: string, data: ResultSubmitData) => {
-  const exam = await prisma.exam.findUnique({
-    where: { id: data.examId },
-    select: { id: true, sectionId: true, totalMarks: true },
+  const exam = await prisma.exam.findFirst({
+    where: { id: data.examId, deletedAt: null },
+    select: { id: true, semesterCourseId: true, totalMarks: true },
   });
   if (!exam) throw new AppError(httpStatus.NOT_FOUND, "Exam not found");
-  await ensureFacultyAssignment(exam.sectionId, userId);
-  const enrollment = await prisma.enrollment.findFirst({
+  await ensureCourseAccess(exam.semesterCourseId, userId);
+  const enrollment = await prisma.courseEnrollment.findFirst({
     where: {
-      id: data.enrollmentId,
+      id: data.courseEnrollmentId,
       studentId: data.studentId,
-      sectionId: exam.sectionId,
+      semesterCourseId: exam.semesterCourseId,
       status: EnrollmentStatus.ENROLLED,
+      deletedAt: null,
     },
     select: { id: true },
   });
   if (!enrollment)
     throw new AppError(
       httpStatus.NOT_FOUND,
-      "Matching active enrollment not found",
+      "Matching active course enrollment not found",
     );
   if (data.marksObtained > exam.totalMarks)
     throw new AppError(
       httpStatus.BAD_REQUEST,
       "Marks cannot exceed total marks",
     );
+  const grade = gradeFor((data.marksObtained / exam.totalMarks) * 100);
   const item = await prisma.result.upsert({
     where: {
       examId_studentId: { examId: data.examId, studentId: data.studentId },
     },
     update: {
-      enrollmentId: data.enrollmentId,
+      courseEnrollmentId: enrollment.id,
       marksObtained: data.marksObtained,
-      ...gradeFor((data.marksObtained / exam.totalMarks) * 100),
+      ...grade,
       enteredById: userId,
       status: ResultStatus.SUBMITTED,
     },
     create: {
-      ...data,
-      ...gradeFor((data.marksObtained / exam.totalMarks) * 100),
+      examId: data.examId,
+      studentId: data.studentId,
+      courseEnrollmentId: enrollment.id,
+      marksObtained: data.marksObtained,
+      ...grade,
       enteredById: userId,
       status: ResultStatus.SUBMITTED,
     },
   });
-  await audit(userId, AuditAction.CREATE_RESULT, item.id);
+  await prisma.auditLog.create({
+    data: {
+      actorId: userId,
+      action: AuditAction.CREATE_RESULT,
+      entity: "Result",
+      entityId: item.id,
+    },
+  });
   return item;
 };
-const publish = async (userId: string, id: string) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true },
-  });
-  if (user?.role !== Role.ADMIN)
-    throw new AppError(httpStatus.FORBIDDEN, "Only admins can publish results");
-  const existing = await prisma.result.findUnique({
-    where: { id },
-    select: { id: true, grade: true, enrollmentId: true },
-  });
-  if (!existing) throw new AppError(httpStatus.NOT_FOUND, "Result not found");
-  const item = await prisma.$transaction(async (tx) => {
-    const publishedResult = await tx.result.update({
-      where: { id },
-      data: { status: ResultStatus.PUBLISHED, publishedAt: new Date() },
-    });
-    await tx.enrollment.update({
-      where: { id: existing.enrollmentId },
-      data: {
-        status:
-          existing.grade === Grade.F
-            ? EnrollmentStatus.FAILED
-            : EnrollmentStatus.COMPLETED,
+
+const publishExamResults = async (userId: string, examId: string) =>
+  prisma.$transaction(async (tx) => {
+    const exam = await tx.exam.findFirst({
+      where: { id: examId, deletedAt: null },
+      include: {
+        semesterCourse: {
+          include: {
+            courseEnrollments: {
+              where: { deletedAt: null },
+              select: { id: true, studentId: true, semesterEnrollmentId: true },
+            },
+            programSemester: { select: { id: true } },
+          },
+        },
+        results: {
+          where: { deletedAt: null, status: ResultStatus.SUBMITTED },
+          select: { id: true, studentId: true, grade: true, gradePoint: true },
+        },
       },
     });
-    return publishedResult;
+    if (!exam) throw new AppError(httpStatus.NOT_FOUND, "Exam not found");
+    await ensureCourseAccess(exam.semesterCourseId, userId);
+    if (exam.results.length === 0)
+      throw new AppError(httpStatus.CONFLICT, "There are no submitted results to publish");
+    const publishedAt = new Date();
+    await tx.result.updateMany({
+      where: { examId, status: ResultStatus.SUBMITTED, deletedAt: null },
+      data: { status: ResultStatus.PUBLISHED, publishedAt },
+    });
+    await tx.exam.update({
+      where: { id: examId },
+      data: { status: "COMPLETED" },
+    });
+    if (exam.examType === ExamType.FINAL) {
+      for (const result of exam.results) {
+        if (!result.grade || result.gradePoint === null) continue;
+        await tx.courseEnrollment.updateMany({
+          where: {
+            studentId: result.studentId,
+            semesterCourseId: exam.semesterCourseId,
+            deletedAt: null,
+          },
+          data: {
+            status:
+              result.grade === Grade.F
+                ? EnrollmentStatus.FAILED
+                : EnrollmentStatus.COMPLETED,
+            finalGrade: result.grade,
+            gradePoint: result.gradePoint,
+          },
+        });
+      }
+      const semesterEnrollments = await tx.semesterEnrollment.findMany({
+        where: {
+          id: {
+            in: exam.semesterCourse.courseEnrollments.map(
+              (item) => item.semesterEnrollmentId,
+            ),
+          },
+          deletedAt: null,
+        },
+        include: {
+          courseEnrollments: {
+            where: { deletedAt: null },
+            select: {
+              status: true,
+              gradePoint: true,
+              semesterCourse: {
+                select: { course: { select: { credits: true } } },
+              },
+            },
+          },
+        },
+      });
+      for (const semesterEnrollment of semesterEnrollments) {
+        const statuses = semesterEnrollment.courseEnrollments.map(
+          (course) => course.status,
+        );
+        const complete =
+          statuses.length > 0 &&
+          statuses.every(
+            (status) =>
+              status === EnrollmentStatus.COMPLETED ||
+              status === EnrollmentStatus.FAILED,
+          );
+        if (!complete) continue;
+        const hasFailure = statuses.includes(EnrollmentStatus.FAILED);
+        const status = hasFailure
+          ? StudentSemesterStatus.FAILED
+          : StudentSemesterStatus.COMPLETED;
+        const credits = semesterEnrollment.courseEnrollments.reduce(
+          (total, enrollment) =>
+            total + enrollment.semesterCourse.course.credits,
+          0,
+        );
+        const qualityPoints = semesterEnrollment.courseEnrollments.reduce(
+          (total, enrollment) =>
+            total +
+            enrollment.semesterCourse.course.credits *
+              (enrollment.gradePoint ?? 0),
+          0,
+        );
+        await tx.semesterEnrollment.update({
+          where: { id: semesterEnrollment.id },
+          data: {
+            status,
+            semesterGpa: credits ? qualityPoints / credits : null,
+            ...(status === StudentSemesterStatus.COMPLETED
+              ? { completedAt: publishedAt }
+              : {}),
+          },
+        });
+        if (status === StudentSemesterStatus.COMPLETED) {
+          const current = await tx.programSemester.findUnique({
+            where: { id: exam.semesterCourse.programSemester.id },
+            select: { programId: true, semesterNumber: true },
+          });
+          if (!current) continue;
+          const next = await tx.programSemester.findFirst({
+            where: {
+              programId: current.programId,
+              semesterNumber: current.semesterNumber + 1,
+              deletedAt: null,
+            },
+            select: { id: true },
+          });
+          if (next) {
+            await tx.studentProfile.update({
+              where: { id: semesterEnrollment.studentId },
+              data: { currentProgramSemesterId: next.id },
+            });
+          }
+        }
+      }
+    }
+    const resultIds = exam.results.map((item) => item.id);
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        action: AuditAction.PUBLISH_RESULT,
+        entity: "Exam",
+        entityId: examId,
+      },
+    });
+    return { publishedResultIds: resultIds };
   });
-  await audit(userId, AuditAction.PUBLISH_RESULT, item.id);
-  return item;
+
+const publish = async (userId: string, id: string) => {
+  const result = await prisma.result.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true, examId: true, exam: { select: { semesterCourseId: true } } },
+  });
+  if (!result) throw new AppError(httpStatus.NOT_FOUND, "Result not found");
+  await ensureCourseAccess(result.exam.semesterCourseId, userId);
+  return publishExamResults(userId, result.examId);
 };
+
 const list = async (userId: string, role: Role, query: ResultListQuery) => {
-  const student = role === Role.STUDENT ? await getStudent(userId) : undefined;
+  const student =
+    role === Role.STUDENT
+      ? await prisma.studentProfile.findFirst({
+          where: { userId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+  const faculty =
+    role === Role.FACULTY
+      ? await prisma.facultyProfile.findFirst({
+          where: { userId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+  if (role === Role.STUDENT && !student)
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+  if (role === Role.FACULTY && !faculty)
+    throw new AppError(httpStatus.NOT_FOUND, "Faculty profile not found");
   return prisma.result.findMany({
     where: {
       deletedAt: null,
       ...(role === Role.STUDENT ? { status: ResultStatus.PUBLISHED } : {}),
       ...(student ? { studentId: student.id } : {}),
       ...(query.examId ? { examId: query.examId } : {}),
+      ...(faculty
+        ? { exam: { semesterCourse: { teacherId: faculty.id } } }
+        : {}),
     },
     include: {
       exam: {
-        include: { section: { include: { course: true, semester: true } } },
+        include: {
+          semesterCourse: {
+            include: { course: true, programSemester: { include: { program: true } } },
+          },
+        },
       },
       student: {
         include: {
@@ -164,4 +321,5 @@ const list = async (userId: string, role: Role, query: ResultListQuery) => {
     orderBy: { createdAt: "desc" },
   });
 };
-export const ResultService = { submit, publish, list };
+
+export const ResultService = { submit, publish, publishExamResults, list };

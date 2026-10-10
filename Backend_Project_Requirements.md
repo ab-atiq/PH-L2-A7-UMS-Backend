@@ -45,13 +45,16 @@ Department → Program (DegreeType BSC/MSC/PHD) → ProgramSemester (Fixed slots
 
 ---
 
-## 3. Roles & Permissions (Exactly 3 Roles)
+## 3. Roles & Permissions
 
-1. **STUDENT** — Academic self-service, view curriculum, pay fees, view attendance, exams, published results, and transcripts.
-2. **FACULTY** — Teaching, attendance marking, exam creation, mark entry, result submission.
-3. **ADMIN** — Full university configuration, academic structure, curriculum assignment, user management, result publishing, fee management, financial reporting, and audit trail.
+1. **USER** — Registered, verified account that can manage its profile, browse active programs and departments, and submit one student or faculty role application. It receives no academic access until an administrator approves the application.
+2. **STUDENT** — Academic self-service, view curriculum, pay fees, view attendance, exams, published results, and transcripts.
+3. **FACULTY** — Teaching, attendance marking, exam creation, mark entry, and publishing results for assigned courses.
+4. **ADMIN** — Full university configuration, academic structure, curriculum assignment, role-application and user management, result publishing, fee management, financial reporting, and audit trail.
 
 ### 3.1 Role Responsibility Matrix
+
+The matrix below covers the three university roles; `USER` accounts have the limited pre-approval permissions described above.
 
 | Capability                                              |       STUDENT       |          FACULTY          |       ADMIN       |
 | ------------------------------------------------------- | :-----------------: | :-----------------------: | :---------------: |
@@ -64,14 +67,14 @@ Department → Program (DegreeType BSC/MSC/PHD) → ProgramSemester (Fixed slots
 | Pay Admission Fee (`InvoiceType.ADMISSION`)             |         ✅          |             —             |    ✅ (Manage)    |
 | Enroll in Semester (`SemesterEnrollment`)               |         ✅          |             —             |    ✅ (Manage)    |
 | View Auto-Created Course Enrollments                    |         ✅          |  ✅ (Enrolled students)   |        ✅         |
-| Drop a Course Enrollment (`EnrollmentStatus.DROPPED`)   |      ✅ (Own)       |             —             |        ✅         |
+| Change course enrollment                                |          —          |             —             |        —          |
 | Mark Attendance                                         |          —          | ✅ (Assigned course only) |        ✅         |
 | View Attendance                                         | ✅ (Own read-only)  |   ✅ (Assigned course)    |     ✅ (All)      |
 | Create & Update Exams                                   |          —          |   ✅ (Assigned course)    |        ✅         |
 | Enter & Update Marks (Results)                          |          —          |   ✅ (Assigned course)    |        ✅         |
-| Review & Publish Exam Results                           |          —          |             —             |        ✅         |
+| Publish results for assigned courses                    |          —          |           ✅              |        ✅         |
 | View Exam Results                                       | ✅ (Published only) |  ✅ (Draft & Published)   |     ✅ (All)      |
-| Mark Semester Completed & Calculate GPA                 |          —          |             —             |        ✅         |
+| Complete semester & Calculate GPA                       | Automatically after all final results are published | — | — |
 | View Official Transcript & CGPA                         |      ✅ (Own)       |             —             |     ✅ (All)      |
 | Create Invoices (`ADMISSION`, `SEMESTER`)               |          —          |             —             |        ✅         |
 | View & Initiate Invoice Payments                        |      ✅ (Own)       |             —             |     ✅ (All)      |
@@ -86,10 +89,10 @@ Department → Program (DegreeType BSC/MSC/PHD) → ProgramSemester (Fixed slots
 
 ### Workflow 1: Registration, Verification & Profile Setup
 
-1. **Student Registration**: Candidate registers via `POST /api/v1/auth/register`. Default role is `STUDENT`, status is `PENDING_VERIFICATION`. System sends email OTP.
-2. **Email Verification**: Candidate verifies email via `POST /api/v1/auth/verify-email`. Status becomes `ACTIVE`.
-3. **Student Profile**: Student profile created via `POST /api/v1/students` with personal info, guardian details, and selected program.
-4. **Faculty Setup**: Faculty accounts are provisioned by Admin via `POST /api/v1/faculty`, linking user credentials with employee ID, designation, and department.
+1. **Account Registration**: Candidate registers via `POST /api/v1/auth/register`. The account starts with role `USER` and status `PENDING_VERIFICATION`; the system sends an email OTP.
+2. **Email Verification**: Candidate verifies email via `POST /api/v1/auth/verify-email`. The account becomes active.
+3. **Role Application**: The verified user applies for `STUDENT` or `FACULTY` through `/api/v1/applications`, selecting an active program or department.
+4. **Approval and Profile Setup**: An administrator reviews the application. Approval transactionally changes the user role and creates the matching student or faculty profile using the selected active catalog record.
 
 ### Workflow 2: Academic Setup & Curriculum Building (Admin)
 
@@ -101,20 +104,21 @@ Department → Program (DegreeType BSC/MSC/PHD) → ProgramSemester (Fixed slots
 
 ### Workflow 3: Program Admission & Admission Invoicing
 
-1. When a student chooses a program, a one-time admission invoice (`FeeInvoice.type = ADMISSION`) is generated for `program.admissionFee`.
-2. Student initiates payment (`POST /api/v1/payments/initiate`) via Stripe, bKash, or SSLCommerz.
+1. The approved student is assigned a program during role approval. On the first Semester 1 enrollment request, the backend creates an admission invoice (`FeeInvoice.type = ADMISSION`) for `program.admissionFee` and returns `paymentRequired` with the invoice ID.
+2. Student initiates payment (`POST /api/v1/payments/initiate`) via the configured payment gateway.
 3. Gateway webhook (`POST /api/v1/payments/webhook`) confirms payment: invoice marked `PAID`, `Payment.status = SUCCESS`.
 4. Admission fee payment unlocks eligibility for **Semester 1 Enrollment**.
 
 ### Workflow 4: Semester Enrollment (Prisma Transaction)
 
-1. Student enrolls in current semester via `POST /api/v1/semester-enrollments`.
+1. Student requests enrollment in a program semester via `POST /api/v1/enrollments` with its `programSemesterId`. This is retried after each required invoice is paid.
 2. **Backend Transaction Validates**:
-   - Admission fee is `PAID` (cannot enroll in any semester otherwise).
+   - Admission fee is `PAID` before Semester 1.
    - If semester number $N > 1$, verify `SemesterEnrollment` for semester $N-1$ has `status = COMPLETED`.
    - Prevent duplicate enrollment in the same `ProgramSemester`.
 3. **On Success**:
-   - `SemesterEnrollment` created with `status = IN_PROGRESS`.
+   - A `SemesterEnrollment` and semester invoice are created. If the semester fee is unpaid, the request returns `paymentRequired`; retry after payment to activate enrollment.
+   - Once paid, `SemesterEnrollment.status` changes to `IN_PROGRESS`.
    - Automatically creates a `CourseEnrollment` (`status = ENROLLED`) for every `SemesterCourse` assigned to that `ProgramSemester`.
    - Automatically generates a recurring tuition fee invoice (`FeeInvoice.type = SEMESTER`) for `program.semesterFee`.
 
@@ -133,17 +137,15 @@ Department → Program (DegreeType BSC/MSC/PHD) → ProgramSemester (Fixed slots
    - System validates `0 <= marksObtained <= exam.totalMarks`.
    - System auto-computes letter grade (`Grade`) and grade point (`gradePoint`).
    - Saved with `status = DRAFT` or `SUBMITTED`.
-3. **Publishing**: Admin reviews exam marks and calls `POST /api/v1/exams/:id/publish-results`:
+3. **Publishing**: An administrator or the assigned faculty calls `POST /api/v1/exams/:id/publish-results`:
    - Results change to `status = PUBLISHED`.
    - Students can now view their grades (`GET /api/v1/results/my`). Students can **never** view results with `status != PUBLISHED`.
 
 ### Workflow 7: Semester Completion & GPA Calculation
 
-1. When all exams for the semester are completed and published, Admin executes `POST /api/v1/semester-enrollments/:id/complete`.
-2. System calculates **Semester GPA** based on course credit weightage:
+1. Publishing final exam results updates course enrollment statuses. When every course in a semester has a final result published, the system automatically completes the semester and calculates GPA based on course credit weightage:
    $$\text{GPA} = \frac{\sum (\text{Course Credits} \times \text{Grade Point})}{\sum \text{Course Credits}}$$
-3. `SemesterEnrollment.status` transitions to `COMPLETED`, `completedAt` timestamp is recorded.
-4. `StudentProfile.currentProgramSemesterId` updates to semester $N+1$, unlocking enrollment for the next semester.
+2. `SemesterEnrollment.status` transitions to `COMPLETED`, `completedAt` timestamp is recorded, and `StudentProfile.currentProgramSemesterId` advances to semester $N+1$ when one exists. No manual completion endpoint is used.
 
 ### Workflow 8: Official Transcript
 

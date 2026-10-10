@@ -1,15 +1,14 @@
-import { EnrollmentStatus, Role } from "../../../generated/prisma/enums.js";
+import type { Role } from "../../../generated/prisma/enums.js";
 
 export type EnrollmentCreateData = {
-  sectionId: string;
+  programSemesterId: string;
 };
 
 export type EnrollmentListQuery = {
   page?: number;
   limit?: number;
   status?: string;
-  sectionId?: string;
-  sortOrder?: "asc" | "desc";
+  semesterCourseId?: string;
 };
 
 export type EnrollmentListContext = {
@@ -17,5 +16,3 @@ export type EnrollmentListContext = {
   role: Role;
   query: EnrollmentListQuery;
 };
-
-export type EnrollmentStatusFilter = EnrollmentStatus;

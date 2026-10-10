@@ -8,7 +8,7 @@ export const StudentCreateValidation = z.object({
   studentId: z.string().trim().min(2).max(50),
   programId: nullableId,
   departmentId: nullableId,
-  currentSemesterId: nullableId,
+  currentProgramSemesterId: nullableId,
   batchYear: z.coerce.number().int().min(1900).max(2100).nullable().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).nullable().optional(),
   dateOfBirth: z.coerce.date().nullable().optional(),
@@ -40,7 +40,7 @@ export const StudentListValidation = z.object({
   search: z.string().trim().optional(),
   departmentId: id.optional(),
   programId: id.optional(),
-  currentSemesterId: id.optional(),
+  currentProgramSemesterId: id.optional(),
   status: z
     .enum(["ACTIVE", "INACTIVE", "SUSPENDED", "PENDING_VERIFICATION"])
     .optional(),

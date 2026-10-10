@@ -49,8 +49,12 @@ const programList = async (query: ProgramListQuery) => {
         name: true,
         code: true,
         departmentId: true,
+        degreeType: true,
+        totalSemesters: true,
         durationYears: true,
         totalCredits: true,
+        admissionFee: true,
+        semesterFee: true,
         status: true,
         createdAt: true,
         updatedAt: true,
@@ -150,7 +154,21 @@ const createNewProgram = async (data: ProgramCreateData, actorId: string) => {
   if (!department) {
     throw new AppError(httpStatus.NOT_FOUND, "Active department not found");
   }
-  const item = await prisma.program.create({ data });
+  const totalSemesters =
+    data.degreeType === "BSC" ? 8 : data.degreeType === "MSC" ? 4 : 6;
+  const item = await prisma.$transaction(async (tx) => {
+    const program = await tx.program.create({
+      data: { ...data, totalSemesters },
+    });
+    await tx.programSemester.createMany({
+      data: Array.from({ length: totalSemesters }, (_, index) => ({
+        programId: program.id,
+        semesterNumber: index + 1,
+        name: `Semester ${index + 1}`,
+      })),
+    });
+    return program;
+  });
   await audit(actorId, AuditAction.CREATE, item.id);
   return item;
 };
@@ -161,6 +179,27 @@ const updateProgram = async (
   actorId: string,
 ) => {
   await getSingleProgram(id);
+  if (data.degreeType) {
+    const existingProgram = await prisma.program.findUnique({
+      where: { id },
+      select: { degreeType: true },
+    });
+    if (existingProgram?.degreeType !== data.degreeType) {
+      const hasStudents = await prisma.studentProfile.count({
+        where: { programId: id, deletedAt: null },
+      });
+      if (hasStudents > 0) {
+        throw new AppError(
+          httpStatus.CONFLICT,
+          "Degree type cannot change while students are enrolled in the program",
+        );
+      }
+      throw new AppError(
+        httpStatus.CONFLICT,
+        "Degree type cannot change after its curriculum has been created",
+      );
+    }
+  }
   if (data.departmentId) {
     const department = await prisma.department.findFirst({
       where: {

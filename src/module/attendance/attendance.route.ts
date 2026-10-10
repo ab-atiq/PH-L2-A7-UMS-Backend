@@ -8,13 +8,19 @@ import { AttendanceValidation } from "./attendance.validation.js";
 const router = Router();
 
 router.get(
-  "/section/:sectionId",
+  "/my",
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  AttendanceController.list,
+);
+
+router.get(
+  "/semester-course/:semesterCourseId",
   auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
   AttendanceController.list,
 );
 
 router.post(
-  "/section/:sectionId",
+  "/semester-course/:semesterCourseId",
   auth(Role.ADMIN, Role.FACULTY),
   validateRequest(AttendanceValidation),
   AttendanceController.create,

@@ -1,28 +1,23 @@
-import { SemesterStatus } from "../../../generated/prisma/enums.js";
+import type { EntityStatus } from "../../../generated/prisma/enums.js";
 
 export type SemesterListQuery = {
   page?: number;
   limit?: number;
   search?: string;
+  programId?: string;
   status?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 };
 
 export type SemesterCreateData = {
+  programId: string;
+  semesterNumber: number;
   name: string;
-  startDate: Date;
-  endDate: Date;
-  registrationStart: Date;
-  registrationEnd: Date;
-  status?: SemesterStatus;
+  status?: EntityStatus;
 };
 
 export type SemesterUpdateData = {
   name?: string;
-  startDate?: Date;
-  endDate?: Date;
-  registrationStart?: Date;
-  registrationEnd?: Date;
-  status?: SemesterStatus;
+  status?: EntityStatus;
 };

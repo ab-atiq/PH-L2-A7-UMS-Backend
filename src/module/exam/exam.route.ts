@@ -33,4 +33,10 @@ router.post(
   ExamController.publish,
 );
 
+router.post(
+  "/:id/publish-results",
+  auth(Role.ADMIN, Role.FACULTY),
+  ExamController.publishResults,
+);
+
 export const ExamRoutes = router;

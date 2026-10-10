@@ -23,7 +23,6 @@ const courseSelect = {
   createdAt: true,
   updatedAt: true,
   department: true,
-  prerequisitesFor: { include: { prerequisite: true } },
 } as const;
 
 const getSearchWhere = (query: CourseListQuery, includeDeleted = false) => ({
@@ -79,7 +78,10 @@ const getSingleCourse = async (id: string) => {
     where: { id, deletedAt: null },
     select: {
       ...courseSelect,
-      sections: { where: { deletedAt: null }, include: { semester: true } },
+      semesterCourses: {
+        where: { deletedAt: null },
+        include: { programSemester: { include: { program: true } }, teacher: true },
+      },
     },
   });
 
@@ -98,7 +100,9 @@ const getSingleCourseByAdmin = async (id: string) => {
     where: { id },
     select: {
       ...courseSelect,
-      sections: { include: { semester: true } },
+      semesterCourses: {
+        include: { programSemester: { include: { program: true } }, teacher: true },
+      },
     },
   });
 

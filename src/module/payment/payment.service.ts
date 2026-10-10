@@ -79,7 +79,7 @@ const createCheckoutSession = async (userId: string, invoiceId: string) => {
     line_items: [
       {
         price_data: {
-          currency: "usd",
+          currency: "bdt",
           unit_amount: Math.round(Number(invoice.amount) * 100),
           product_data: { name: `University invoice ${invoice.invoiceNumber}` },
         },

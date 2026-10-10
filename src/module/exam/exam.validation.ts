@@ -1,7 +1,7 @@
 import z from "zod";
 const id = z.string().uuid();
 export const ExamValidation = z.object({
-  sectionId: id,
+  semesterCourseId: id,
   examType: z.enum(["QUIZ", "ASSIGNMENT", "MIDTERM", "FINAL", "PROJECT"]),
   title: z.string().trim().max(160).nullable().optional(),
   examDate: z.coerce.date(),

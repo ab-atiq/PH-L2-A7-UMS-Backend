@@ -10,7 +10,11 @@ export const ResultController = {
       statusCode: 200,
       success: true,
       message: "Results fetched successfully",
-      data: await ResultService.list(user.userId, user.role, req.query),
+      data: await ResultService.list(user.userId, user.role, {
+        ...(typeof req.query.examId === "string"
+          ? { examId: req.query.examId }
+          : {}),
+      }),
     });
   }),
   submit: catchAsync(async (req, res) =>

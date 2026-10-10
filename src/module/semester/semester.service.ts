@@ -1,8 +1,5 @@
 import httpStatus from "http-status";
-import {
-  AuditAction,
-  SemesterStatus,
-} from "../../../generated/prisma/enums.js";
+import { AuditAction, EntityStatus } from "../../../generated/prisma/enums.js";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../utils/AppError.js";
 import type {
@@ -11,56 +8,44 @@ import type {
   SemesterUpdateData,
 } from "./semester.interface.js";
 
-const getWhere = (query: SemesterListQuery, includeDeleted = false) => ({
-  ...(includeDeleted ? {} : { deletedAt: null }),
-  ...(query.search
-    ? { name: { contains: query.search, mode: "insensitive" as const } }
-    : {}),
-  ...(query.status ? { status: query.status as SemesterStatus } : {}),
-});
-
-const listSemesters = async (
-  query: SemesterListQuery,
-  includeDeleted = false,
-) => {
+const listSemesters = async (query: SemesterListQuery) => {
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 20), 1), 100);
-  const where = getWhere(query, includeDeleted);
-  const orderBy = {
-    [query.sortBy || "createdAt"]: query.sortOrder || "desc",
+  const where = {
+    deletedAt: null,
+    ...(query.programId ? { programId: query.programId } : {}),
+    ...(query.status ? { status: query.status as EntityStatus } : {}),
+    ...(query.search
+      ? { name: { contains: query.search, mode: "insensitive" as const } }
+      : {}),
   };
   const [data, total] = await Promise.all([
-    prisma.semester.findMany({
+    prisma.programSemester.findMany({
       where,
-      select: includeDeleted
-        ? {
-            id: true,
-            name: true,
-            startDate: true,
-            endDate: true,
-            registrationStart: true,
-            registrationEnd: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            deletedAt: true,
-          }
-        : {
-            id: true,
-            name: true,
-            startDate: true,
-            endDate: true,
-            registrationStart: true,
-            registrationEnd: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
+      include: {
+        program: { select: { id: true, name: true, code: true, degreeType: true } },
+        semesterCourses: {
+          where: { deletedAt: null },
+          include: {
+            course: true,
+            teacher: {
+              include: {
+                user: {
+                  select: { id: true, firstName: true, lastName: true, email: true },
+                },
+              },
+            },
           },
+        },
+      },
       skip: (page - 1) * limit,
       take: limit,
-      orderBy,
+      orderBy: [
+        { program: { name: "asc" } },
+        { semesterNumber: "asc" },
+      ],
     }),
-    prisma.semester.count({ where }),
+    prisma.programSemester.count({ where }),
   ]);
   return {
     data,
@@ -68,94 +53,45 @@ const listSemesters = async (
   };
 };
 
-const semesterList = (query: SemesterListQuery) => listSemesters(query);
-const semesterListByAdmin = (query: SemesterListQuery) => listSemesters(query);
+const semesterList = listSemesters;
+const semesterListByAdmin = listSemesters;
 
 const getSingleSemester = async (id: string) => {
-  const item = await prisma.semester.findFirst({
+  const item = await prisma.programSemester.findFirst({
     where: { id, deletedAt: null },
-    select: {
-      id: true,
-      name: true,
-      startDate: true,
-      endDate: true,
-      registrationStart: true,
-      registrationEnd: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-      sections: {
+    include: {
+      program: true,
+      semesterCourses: {
         where: { deletedAt: null },
-        select: {
-          id: true,
-          courseId: true,
-          semesterId: true,
-          sectionName: true,
-          capacity: true,
-          room: true,
-          schedule: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-          course: {
-            select: {
-              id: true,
-              courseCode: true,
-              title: true,
-              credits: true,
-              status: true,
-            },
-          },
-        },
+        include: { course: true, teacher: { include: { user: true } } },
       },
     },
   });
-  if (!item) {
-    throw new AppError(httpStatus.NOT_FOUND, "Semester not found");
-  }
+  if (!item) throw new AppError(httpStatus.NOT_FOUND, "Program semester not found");
   return item;
 };
 
-const getSingleSemesterByAdmin = async (id: string) => {
-  const item = await prisma.semester.findUnique({
-    where: { id },
-    include: { sections: { include: { course: true } } },
-  });
+const getSingleSemesterByAdmin = getSingleSemester;
 
-  if (!item) {
-    throw new AppError(httpStatus.NOT_FOUND, "Semester not found");
-  }
-  return item;
-};
-
-const audit = async (
-  actorId: string,
-  action: AuditAction,
-  entityId: string,
-) => {
-  await prisma.auditLog.create({
-    data: { actorId, action, entity: "Semester", entityId },
+const audit = async (actorId: string, action: AuditAction, entityId: string) =>
+  prisma.auditLog.create({
+    data: { actorId, action, entity: "ProgramSemester", entityId },
   });
-};
 
 const createSemester = async (data: SemesterCreateData, actorId: string) => {
-  const isExist = await prisma.semester.findFirst({
-    where: {
-      name: data.name,
-      deletedAt: null,
-    },
+  const program = await prisma.program.findFirst({
+    where: { id: data.programId, deletedAt: null },
+    select: { id: true, totalSemesters: true },
   });
-
-  if (isExist) {
+  if (!program) throw new AppError(httpStatus.NOT_FOUND, "Program not found");
+  if (data.semesterNumber > program.totalSemesters) {
     throw new AppError(
-      httpStatus.CONFLICT,
-      "Semester with this name already exists",
+      httpStatus.BAD_REQUEST,
+      "Semester number exceeds the program's degree length",
     );
   }
-
-  const item = await prisma.semester.create({ data });
+  const item = await prisma.programSemester.create({ data });
   await audit(actorId, AuditAction.CREATE, item.id);
-
   return item;
 };
 
@@ -164,30 +100,18 @@ const updateSemester = async (
   data: SemesterUpdateData,
   actorId: string,
 ) => {
-  const isExist = await getSingleSemesterByAdmin(id);
-  if (!isExist) {
-    throw new AppError(httpStatus.NOT_FOUND, "Semester not found");
-  }
-
-  const item = await prisma.semester.update({ where: { id }, data });
+  await getSingleSemesterByAdmin(id);
+  const item = await prisma.programSemester.update({ where: { id }, data });
   await audit(actorId, AuditAction.UPDATE, id);
-
   return item;
 };
 
-const removeSemester = async (id: string, actorId: string) => {
-  const isExist = await getSingleSemesterByAdmin(id);
-  if (!isExist) {
-    throw new AppError(httpStatus.NOT_FOUND, "Semester not found");
-  }
-
-  const item = await prisma.semester.update({
-    where: { id },
-    data: { deletedAt: new Date(), status: SemesterStatus.ARCHIVED },
-  });
-
-  await audit(actorId, AuditAction.DELETE, id);
-  return item;
+const removeSemester = async (id: string, _actorId: string) => {
+  await getSingleSemesterByAdmin(id);
+  throw new AppError(
+    httpStatus.CONFLICT,
+    "Program semester slots are fixed by degree type and cannot be deleted",
+  );
 };
 
 export const SemesterService = {

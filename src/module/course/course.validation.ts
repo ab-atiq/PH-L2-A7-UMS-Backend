@@ -15,11 +15,6 @@ export const CourseValidation = z.object({
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
 });
 
-export const CoursePrerequisiteValidation = z.object({
-  courseId: id,
-  prerequisiteId: id,
-});
-
 export const CourseListValidation = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

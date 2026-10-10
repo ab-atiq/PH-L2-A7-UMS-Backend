@@ -41,7 +41,9 @@ const studentSelect = {
   },
   department: { select: { id: true, name: true, code: true, status: true } },
   program: { select: { id: true, name: true, code: true, status: true } },
-  currentSemester: { select: { id: true, name: true, status: true } },
+  currentProgramSemester: {
+    select: { id: true, name: true, semesterNumber: true, status: true },
+  },
 } as const;
 
 const audit = async (
@@ -73,8 +75,8 @@ const listStudentProfilesByAdmin = async (query: StudentListQuery) => {
     ...(includeDeleted ? {} : { deletedAt: null }),
     ...(query.departmentId ? { departmentId: query.departmentId } : {}),
     ...(query.programId ? { programId: query.programId } : {}),
-    ...(query.currentSemesterId
-      ? { currentSemesterId: query.currentSemesterId }
+    ...(query.currentProgramSemesterId
+      ? { currentProgramSemesterId: query.currentProgramSemesterId }
       : {}),
     ...(query.status ? { user: { status: query.status as UserStatus } } : {}),
     ...(search
@@ -159,7 +161,7 @@ const listStudentProfilesByAdmin = async (query: StudentListQuery) => {
 const ensureRelations = async (
   data: Pick<
     StudentCreateData,
-    "programId" | "departmentId" | "currentSemesterId"
+    "programId" | "departmentId" | "currentProgramSemesterId"
   >,
 ) => {
   if (data.departmentId) {
@@ -191,9 +193,13 @@ const ensureRelations = async (
         "Program does not belong to the selected department",
       );
   }
-  if (data.currentSemesterId) {
-    const semester = await prisma.semester.findFirst({
-      where: { id: data.currentSemesterId, deletedAt: null },
+  if (data.currentProgramSemesterId) {
+    const semester = await prisma.programSemester.findFirst({
+      where: {
+        id: data.currentProgramSemesterId,
+        deletedAt: null,
+        ...(data.programId ? { programId: data.programId } : {}),
+      },
       select: { id: true },
     });
     if (!semester)
@@ -353,7 +359,7 @@ const updateStudentProfile = async (
       userId: true,
       departmentId: true,
       programId: true,
-      currentSemesterId: true,
+      currentProgramSemesterId: true,
     },
   });
   if (!existing) {
@@ -365,7 +371,8 @@ const updateStudentProfile = async (
   await ensureRelations({
     departmentId: data.departmentId ?? existing.departmentId,
     programId: data.programId ?? existing.programId,
-    currentSemesterId: data.currentSemesterId ?? existing.currentSemesterId,
+    currentProgramSemesterId:
+      data.currentProgramSemesterId ?? existing.currentProgramSemesterId,
   });
 
   if (data.userId && data.userId !== existing.userId) {

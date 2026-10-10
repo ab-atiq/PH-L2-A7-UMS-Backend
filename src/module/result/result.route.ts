@@ -17,5 +17,9 @@ router.post(
   validateRequest(ResultValidation),
   ResultController.submit,
 );
-router.post("/:id/publish", auth(Role.ADMIN), ResultController.publish);
+router.post(
+  "/:id/publish",
+  auth(Role.ADMIN, Role.FACULTY),
+  ResultController.publish,
+);
 export const ResultRoutes = router;

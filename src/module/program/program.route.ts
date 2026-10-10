@@ -12,15 +12,21 @@ const router = Router();
 
 router.get(
   "/",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
   validateRequest(ProgramListValidation),
   ProgramController.programList,
 );
 
 router.get(
   "/:id",
-  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT),
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
   ProgramController.getSingleProgram,
+);
+
+router.get(
+  "/:id/semesters",
+  auth(Role.ADMIN, Role.FACULTY, Role.STUDENT, Role.USER),
+  ProgramController.listProgramSemesters,
 );
 
 router.post(

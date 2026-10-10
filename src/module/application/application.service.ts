@@ -1,7 +1,9 @@
+import crypto from "crypto";
 import httpStatus from "http-status";
 import {
   AuditAction,
   ApplicationStatus,
+  EntityStatus,
   Role,
 } from "../../../generated/prisma/enums.js";
 import { prisma } from "../../lib/prisma.js";
@@ -120,6 +122,117 @@ const updateApplicationStatus = async (
           data: { role: requestedRole },
         });
         roleChanged = true;
+      }
+      if (requestedRole === Role.STUDENT) {
+        const existingProfile = await transaction.studentProfile.findUnique({
+          where: { userId: application.userId },
+          select: { id: true },
+        });
+        if (!existingProfile) {
+          const programInterest =
+            await transaction.roleApplication.findUniqueOrThrow({
+              where: { id: applicationId },
+              select: { programInterest: true },
+            });
+          if (!programInterest.programInterest) {
+            throw new AppError(
+              httpStatus.BAD_REQUEST,
+              "Student application is missing a program selection",
+            );
+          }
+          const program = await transaction.program.findFirst({
+            where: {
+              deletedAt: null,
+              status: EntityStatus.ACTIVE,
+              OR: [
+                {
+                  code: {
+                    equals: programInterest.programInterest,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  name: {
+                    equals: programInterest.programInterest,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            },
+            select: { id: true, departmentId: true },
+          });
+          if (!program) {
+            throw new AppError(
+              httpStatus.BAD_REQUEST,
+              "Select an active program before approving this student application",
+            );
+          }
+          await transaction.studentProfile.create({
+            data: {
+              userId: application.userId,
+              studentId: `STU-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+              programId: program.id,
+              departmentId: program.departmentId,
+              admissionDate: new Date(),
+            },
+          });
+        }
+      } else {
+        const existingProfile = await transaction.facultyProfile.findUnique({
+          where: { userId: application.userId },
+          select: { id: true },
+        });
+        if (!existingProfile) {
+          const facultyApplication =
+            await transaction.roleApplication.findUniqueOrThrow({
+              where: { id: applicationId },
+              select: {
+                departmentInterest: true,
+                highestQualification: true,
+                specialization: true,
+              },
+            });
+          const departmentInterest = facultyApplication.departmentInterest;
+          const department = departmentInterest
+            ? await transaction.department.findFirst({
+                where: {
+                  deletedAt: null,
+                  status: EntityStatus.ACTIVE,
+                  OR: [
+                    {
+                      code: {
+                        equals: departmentInterest,
+                        mode: "insensitive",
+                      },
+                    },
+                    {
+                      name: {
+                        equals: departmentInterest,
+                        mode: "insensitive",
+                      },
+                    },
+                  ],
+                },
+                select: { id: true },
+              })
+            : null;
+          if (!department) {
+            throw new AppError(
+              httpStatus.BAD_REQUEST,
+              "Select an active department before approving this faculty application",
+            );
+          }
+          await transaction.facultyProfile.create({
+            data: {
+              userId: application.userId,
+              employeeId: `FAC-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+              departmentId: department.id,
+              designation: facultyApplication.highestQualification,
+              specialization: facultyApplication.specialization,
+              joinDate: new Date(),
+            },
+          });
+        }
       }
     }
 

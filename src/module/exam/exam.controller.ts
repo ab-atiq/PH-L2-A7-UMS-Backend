@@ -2,6 +2,7 @@ import type { Request } from "express";
 import { catchAsync } from "../../utils/catchAsync.js";
 import { sendResponse } from "../../utils/sendResponse.js";
 import { ExamService } from "./exam.service.js";
+import { ResultService } from "../result/result.service.js";
 const actor = (req: Request) => req.user!;
 export const ExamController = {
   list: catchAsync(async (req, res) => {
@@ -10,7 +11,11 @@ export const ExamController = {
       statusCode: 200,
       success: true,
       message: "Exams fetched successfully",
-      data: await ExamService.list(user.userId, user.role, req.query),
+      data: await ExamService.list(user.userId, user.role, {
+        ...(typeof req.query.semesterCourseId === "string"
+          ? { semesterCourseId: req.query.semesterCourseId }
+          : {}),
+      }),
     });
   }),
   create: catchAsync(async (req, res) =>
@@ -39,6 +44,17 @@ export const ExamController = {
       success: true,
       message: "Exam published successfully",
       data: await ExamService.publish(actor(req).userId, String(req.params.id)),
+    }),
+  ),
+  publishResults: catchAsync(async (req, res) =>
+    sendResponse(res, {
+      statusCode: 200,
+      success: true,
+      message: "Exam results published successfully",
+      data: await ResultService.publishExamResults(
+        actor(req).userId,
+        String(req.params.id),
+      ),
     }),
   ),
 };

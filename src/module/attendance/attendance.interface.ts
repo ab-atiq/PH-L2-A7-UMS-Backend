@@ -4,8 +4,8 @@ import type {
 } from "../../../generated/prisma/enums.js";
 
 export type AttendanceData = {
-  enrollmentId: string;
-  sectionId: string;
+  courseEnrollmentId: string;
+  semesterCourseId: string;
   classDate: Date;
   status: AttendanceStatus;
   remarks?: string | null;
@@ -19,5 +19,5 @@ export type AttendanceUpdateData = {
 export type AttendanceListContext = {
   userId: string;
   role: Role;
-  sectionId: string;
+  semesterCourseId?: string;
 };

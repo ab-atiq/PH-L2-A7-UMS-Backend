@@ -4,6 +4,7 @@ import { AppError } from "../../utils/AppError";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 import { ProgramService } from "./program.service.js";
+import { SemesterService } from "../semester/semester.service.js";
 
 const getActorId = (req: Request) => {
   if (!req.user) {
@@ -85,6 +86,20 @@ const removeProgram = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const ProgramController = {
+  listProgramSemesters: catchAsync(async (req, res) => {
+    const result = await SemesterService.semesterList({
+      programId: String(req.params.id),
+      page: 1,
+      limit: 100,
+    });
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Program semesters fetched successfully",
+      data: result.data,
+      meta: result.meta,
+    });
+  }),
   programList,
   getSingleProgram,
   programListByAdmin: programList,

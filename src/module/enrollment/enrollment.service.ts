@@ -1,8 +1,13 @@
+import crypto from "crypto";
 import httpStatus from "http-status";
 import {
   AuditAction,
   EnrollmentStatus,
+  EntityStatus,
+  InvoiceStatus,
+  InvoiceType,
   Role,
+  StudentSemesterStatus,
 } from "../../../generated/prisma/enums.js";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../utils/AppError.js";
@@ -11,295 +16,271 @@ import type {
   EnrollmentListContext,
 } from "./enrollment.interface.js";
 
-const SEMESTER_CREDIT_LIMIT = 24;
-const publicUser = {
-  id: true,
-  email: true,
-  firstName: true,
-  lastName: true,
-  phone: true,
-  avatarUrl: true,
-  status: true,
-} as const;
-
-const enrollmentSelect = {
-  id: true,
-  studentId: true,
-  sectionId: true,
-  status: true,
-  enrolledAt: true,
-  droppedAt: true,
-  finalGrade: true,
-  gradePoint: true,
-  createdAt: true,
-  updatedAt: true,
-  student: {
-    select: {
-      id: true,
-      studentId: true,
-      user: { select: publicUser },
-    },
-  },
-  section: {
-    select: {
-      id: true,
-      sectionName: true,
-      capacity: true,
-      room: true,
-      schedule: true,
-      status: true,
-      course: {
-        select: { id: true, courseCode: true, title: true, credits: true },
-      },
-      semester: {
-        select: { id: true, name: true, startDate: true, endDate: true },
-      },
-    },
-  },
-} as const;
-
-const getStudent = async (userId: string) => {
-  const student = await prisma.studentProfile.findFirst({
-    where: { userId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!student)
-    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
-  return student;
-};
-
-const getFaculty = async (userId: string) => {
-  const faculty = await prisma.facultyProfile.findFirst({
-    where: { userId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!faculty)
-    throw new AppError(httpStatus.NOT_FOUND, "Faculty profile not found");
-  return faculty;
-};
-
-const audit = async (
-  actorId: string,
-  action: AuditAction,
-  entityId: string,
-) => {
-  await prisma.auditLog.create({
-    data: { actorId, action, entity: "Enrollment", entityId },
-  });
-};
-
-const createEnrollment = async (userId: string, data: EnrollmentCreateData) =>
-  prisma.$transaction(async (tx) => {
-    const student = await tx.studentProfile.findFirst({
-      where: { userId, deletedAt: null },
-      select: {
-        id: true,
-        enrollments: {
-          select: {
-            status: true,
-            section: {
-              select: {
-                courseId: true,
-                semesterId: true,
-                course: { select: { credits: true } },
-              },
-            },
-          },
-        },
-      },
-    });
-    if (!student)
-      throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
-
-    const section = await tx.section.findFirst({
-      where: { id: data.sectionId, deletedAt: null },
-      select: {
-        id: true,
-        courseId: true,
-        semesterId: true,
-        capacity: true,
-        status: true,
-        course: { select: { credits: true, status: true } },
-        semester: {
-          select: {
-            status: true,
-            registrationStart: true,
-            registrationEnd: true,
-          },
-        },
-        enrollments: {
-          where: { status: EnrollmentStatus.ENROLLED },
-          select: { id: true },
-        },
-      },
-    });
-    if (!section) throw new AppError(httpStatus.NOT_FOUND, "Section not found");
-
-    const now = new Date();
-    if (
-      section.status !== "PUBLISHED" ||
-      section.course.status !== "PUBLISHED"
-    ) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "Section or course is not available",
-      );
-    }
-    if (
-      section.semester.status !== "REGISTRATION_OPEN" ||
-      now < section.semester.registrationStart ||
-      now > section.semester.registrationEnd
-    ) {
-      throw new AppError(httpStatus.BAD_REQUEST, "Registration is not open");
-    }
-    if (section.enrollments.length >= section.capacity) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "Section capacity has been reached",
-      );
-    }
-
-    const existing = await tx.enrollment.findUnique({
-      where: {
-        studentId_sectionId: {
-          studentId: student.id,
-          sectionId: data.sectionId,
-        },
-      },
-      select: { id: true, status: true },
-    });
-    if (existing?.status === EnrollmentStatus.ENROLLED) {
-      throw new AppError(
-        httpStatus.CONFLICT,
-        "Already enrolled in this section",
-      );
-    }
-
-    const completed = student.enrollments
-      .filter((item) => item.status === EnrollmentStatus.COMPLETED)
-      .map((item) => item.section.courseId);
-    if (completed.includes(section.courseId)) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "Course has already been completed",
-      );
-    }
-
-    const credits = student.enrollments
-      .filter(
-        (item) =>
-          item.status === EnrollmentStatus.ENROLLED &&
-          item.section.semesterId === section.semesterId,
-      )
-      .reduce((sum, item) => sum + item.section.course.credits, 0);
-    if (credits + section.course.credits > SEMESTER_CREDIT_LIMIT) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        `Semester credit limit is ${SEMESTER_CREDIT_LIMIT}`,
-      );
-    }
-
-    // const prerequisites = await tx.coursePrerequisite.findMany({
-    //   where: { courseId: section.courseId },
-    //   select: { prerequisiteId: true },
-    // });
-    // if (
-    //   prerequisites.some((item) => !completed.includes(item.prerequisiteId))
-    // ) {
-    //   throw new AppError(
-    //     httpStatus.BAD_REQUEST,
-    //     "Course prerequisites are not completed",
-    //   );
-    // }
-
-    const enrollment = existing
-      ? await tx.enrollment.update({
-          where: { id: existing.id },
-          data: {
-            status: EnrollmentStatus.ENROLLED,
-            enrolledAt: now,
-            droppedAt: null,
-            deletedAt: null,
-          },
-          select: enrollmentSelect,
-        })
-      : await tx.enrollment.create({
-          data: { studentId: student.id, sectionId: data.sectionId },
-          select: enrollmentSelect,
-        });
-
-    await tx.auditLog.create({
-      data: {
-        actorId: userId,
-        action: AuditAction.ENROLL,
-        entity: "Enrollment",
-        entityId: enrollment.id,
-      },
-    });
-    return enrollment;
-  });
-
-const dropEnrollment = async (userId: string, id: string) => {
-  const student = await getStudent(userId);
-  const enrollment = await prisma.enrollment.findFirst({
-    where: { id, studentId: student.id, status: EnrollmentStatus.ENROLLED },
-    select: { id: true },
-  });
-  if (!enrollment)
-    throw new AppError(httpStatus.NOT_FOUND, "Enrollment not found");
-
-  const result = await prisma.enrollment.update({
-    where: { id },
-    data: { status: EnrollmentStatus.DROPPED, droppedAt: new Date() },
-    select: enrollmentSelect,
-  });
-  await audit(userId, AuditAction.DROP_ENROLLMENT, result.id);
-  return result;
-};
-
-const listEnrollments = async ({
+const pageEnrollments = async ({
   userId,
   role,
   query,
 }: EnrollmentListContext) => {
-  const page = Math.max(Number(query.page || 1), 1);
-  const limit = Math.min(Math.max(Number(query.limit || 20), 1), 100);
-  const student = role === Role.STUDENT ? await getStudent(userId) : undefined;
-  const faculty = role === Role.FACULTY ? await getFaculty(userId) : undefined;
+  const page = Math.max(query.page ?? 1, 1);
+  const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+  const student =
+    role === Role.STUDENT
+      ? await prisma.studentProfile.findFirst({
+          where: { userId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+  const faculty =
+    role === Role.FACULTY
+      ? await prisma.facultyProfile.findFirst({
+          where: { userId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+  if (role === Role.STUDENT && !student)
+    throw new AppError(httpStatus.NOT_FOUND, "Student profile not found");
+  if (role === Role.FACULTY && !faculty)
+    throw new AppError(httpStatus.NOT_FOUND, "Faculty profile not found");
 
   const where = {
-    ...(role === Role.ADMIN ? {} : { deletedAt: null }),
+    deletedAt: null,
     ...(student ? { studentId: student.id } : {}),
-    ...(faculty
-      ? { section: { facultyAssignments: { some: { facultyId: faculty.id } } } }
-      : {}),
     ...(query.status ? { status: query.status as EnrollmentStatus } : {}),
-    ...(query.sectionId ? { sectionId: query.sectionId } : {}),
+    ...(query.semesterCourseId
+      ? { semesterCourseId: query.semesterCourseId }
+      : {}),
+    ...(faculty
+      ? { semesterCourse: { teacherId: faculty.id, deletedAt: null } }
+      : {}),
   };
-
   const [data, total] = await Promise.all([
-    prisma.enrollment.findMany({
+    prisma.courseEnrollment.findMany({
       where,
-      select:
-        role === Role.ADMIN
-          ? { ...enrollmentSelect, deletedAt: true }
-          : enrollmentSelect,
+      include: {
+        student: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        semesterCourse: {
+          include: {
+            course: true,
+            programSemester: { include: { program: true } },
+            teacher: {
+              include: { user: { select: { firstName: true, lastName: true } } },
+            },
+          },
+        },
+        semesterEnrollment: true,
+      },
       skip: (page - 1) * limit,
       take: limit,
-      orderBy: { createdAt: query.sortOrder || "desc" },
+      orderBy: { enrolledAt: "desc" },
     }),
-
-    prisma.enrollment.count({ where }),
+    prisma.courseEnrollment.count({ where }),
   ]);
-
   return {
     data,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 };
 
+const createEnrollment = async (userId: string, data: EnrollmentCreateData) =>
+  prisma.$transaction(async (tx) => {
+    const student = await tx.studentProfile.findFirst({
+      where: { userId, deletedAt: null },
+      select: { id: true, programId: true, studentId: true },
+    });
+    if (!student?.programId)
+      throw new AppError(
+        httpStatus.CONFLICT,
+        "Student must be assigned to a program before semester enrollment",
+      );
+
+    const programSemester = await tx.programSemester.findFirst({
+      where: {
+        id: data.programSemesterId,
+        programId: student.programId,
+        deletedAt: null,
+        status: EntityStatus.ACTIVE,
+      },
+      include: { program: { select: { semesterFee: true } } },
+    });
+    if (!programSemester)
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        "Active semester not found in the student's program",
+      );
+
+    if (programSemester.semesterNumber > 1) {
+      const previous = await tx.semesterEnrollment.findFirst({
+        where: {
+          studentId: student.id,
+          programSemester: {
+            programId: student.programId,
+            semesterNumber: programSemester.semesterNumber - 1,
+          },
+          deletedAt: null,
+        },
+        select: { status: true },
+      });
+      if (previous?.status !== StudentSemesterStatus.COMPLETED) {
+        throw new AppError(
+          httpStatus.CONFLICT,
+          "Complete the previous semester before enrolling in this semester",
+        );
+      }
+    } else {
+      const admissionPaid = await tx.feeInvoice.findFirst({
+        where: {
+          studentId: student.id,
+          programId: student.programId,
+          type: InvoiceType.ADMISSION,
+          status: InvoiceStatus.PAID,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!admissionPaid) {
+        let admissionInvoice = await tx.feeInvoice.findFirst({
+          where: {
+            studentId: student.id,
+            programId: student.programId,
+            type: InvoiceType.ADMISSION,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!admissionInvoice) {
+          const program = await tx.program.findUniqueOrThrow({
+            where: { id: student.programId },
+            select: { name: true, admissionFee: true },
+          });
+          admissionInvoice = await tx.feeInvoice.create({
+            data: {
+              invoiceNumber: `INV-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+              studentId: student.id,
+              type: InvoiceType.ADMISSION,
+              programId: student.programId,
+              description: `${program.name} admission fee`,
+              amount: program.admissionFee,
+              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+        return {
+          paymentRequired: true as const,
+          reason: "Pay the program admission fee before enrolling in semester one",
+          invoiceId: admissionInvoice.id,
+        };
+      }
+    }
+
+    const semesterEnrollment = await tx.semesterEnrollment.upsert({
+      where: {
+        studentId_programSemesterId: {
+          studentId: student.id,
+          programSemesterId: programSemester.id,
+        },
+      },
+      create: {
+        studentId: student.id,
+        programSemesterId: programSemester.id,
+        status: StudentSemesterStatus.NOT_STARTED,
+      },
+      update: {},
+    });
+
+    const semesterInvoice = await tx.feeInvoice.findFirst({
+      where: {
+        studentId: student.id,
+        semesterEnrollmentId: semesterEnrollment.id,
+        type: InvoiceType.SEMESTER,
+        deletedAt: null,
+      },
+      select: { id: true, status: true },
+    });
+    if (!semesterInvoice) {
+      const invoice = await tx.feeInvoice.create({
+        data: {
+          invoiceNumber: `INV-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+          studentId: student.id,
+          type: InvoiceType.SEMESTER,
+          semesterEnrollmentId: semesterEnrollment.id,
+          description: `${programSemester.name} tuition fee`,
+          amount: programSemester.program.semesterFee,
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+      return {
+        paymentRequired: true as const,
+        reason: "Pay the semester fee before course enrollment",
+        invoiceId: invoice.id,
+      };
+    }
+    if (semesterInvoice.status !== InvoiceStatus.PAID) {
+      return {
+        paymentRequired: true as const,
+        reason: "Pay the semester fee before course enrollment",
+        invoiceId: semesterInvoice.id,
+      };
+    }
+
+    const existingCourses = await tx.semesterCourse.findMany({
+      where: { programSemesterId: programSemester.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (existingCourses.length === 0) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        "This semester has no courses configured yet",
+      );
+    }
+    await tx.courseEnrollment.createMany({
+      data: existingCourses.map(({ id }) => ({
+        studentId: student.id,
+        semesterCourseId: id,
+        semesterEnrollmentId: semesterEnrollment.id,
+      })),
+      skipDuplicates: true,
+    });
+    const activated = await tx.semesterEnrollment.update({
+      where: { id: semesterEnrollment.id },
+      data: { status: StudentSemesterStatus.IN_PROGRESS },
+    });
+    await tx.studentProfile.update({
+      where: { id: student.id },
+      data: { currentProgramSemesterId: programSemester.id },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        action: AuditAction.CREATE,
+        entity: "SemesterEnrollment",
+        entityId: activated.id,
+      },
+    });
+    return { paymentRequired: false as const, semesterEnrollment: activated };
+  });
+
+const listEnrollments = pageEnrollments;
+const dropEnrollment = async () => {
+  throw new AppError(
+    httpStatus.FORBIDDEN,
+    "Course enrollments are managed by the program curriculum",
+  );
+};
+
 export const EnrollmentService = {
+  listEnrollments,
   createEnrollment,
   dropEnrollment,
-  listEnrollments,
 };

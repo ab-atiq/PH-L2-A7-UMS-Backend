@@ -32,8 +32,7 @@ const getDashboardStats = async () => {
     departments,
     programs,
     courses,
-    semesters,
-    sections,
+    programSemesters,
     enrollments,
     invoices,
     payments,
@@ -45,9 +44,8 @@ const getDashboardStats = async () => {
     prisma.department.count({ where: activeRecord }),
     prisma.program.count({ where: activeRecord }),
     prisma.course.count({ where: activeRecord }),
-    prisma.semester.count({ where: activeRecord }),
-    prisma.section.count({ where: activeRecord }),
-    prisma.enrollment.count({ where: activeRecord }),
+    prisma.programSemester.count({ where: activeRecord }),
+    prisma.courseEnrollment.count({ where: activeRecord }),
     Promise.all(
       Object.values(InvoiceStatus).map(
         async (status) =>
@@ -84,8 +82,7 @@ const getDashboardStats = async () => {
       departments,
       programs,
       courses,
-      semesters,
-      sections,
+      programSemesters,
       enrollments,
     },
     invoices: Object.fromEntries(invoices),

@@ -48,7 +48,7 @@ const adminUserSelect = {
       studentId: true,
       program: { select: { id: true, name: true, code: true } },
       department: { select: { id: true, name: true, code: true } },
-      currentSemester: { select: { id: true, name: true } },
+      currentProgramSemester: { select: { id: true, name: true } },
     },
   },
   facultyProfile: {
@@ -199,7 +199,11 @@ const getMyProfile = async (userId: string) => {
     select: {
       ...publicUserSelect,
       studentProfile: {
-        include: { program: true, department: true, currentSemester: true },
+        include: {
+          program: true,
+          department: true,
+          currentProgramSemester: true,
+        },
       },
       facultyProfile: { include: { department: true } },
     },

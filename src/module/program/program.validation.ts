@@ -9,8 +9,11 @@ export const ProgramValidation = z.object({
     .max(30)
     .transform((value) => value.toUpperCase()),
   departmentId: id,
+  degreeType: z.enum(["BSC", "MSC", "PHD"]),
   durationYears: z.number().int().positive(),
   totalCredits: z.number().int().positive(),
+  admissionFee: z.number().nonnegative(),
+  semesterFee: z.number().nonnegative().default(50000),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
 });
 export const ProgramListValidation = z.object({

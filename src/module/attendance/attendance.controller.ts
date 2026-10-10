@@ -13,7 +13,9 @@ export const AttendanceController = {
       data: await AttendanceService.list(
         user.userId,
         user.role,
-        String(req.params.sectionId),
+        typeof req.params.semesterCourseId === "string"
+          ? req.params.semesterCourseId
+          : undefined,
       ),
     });
   }),
@@ -24,7 +26,7 @@ export const AttendanceController = {
       message: "Attendance marked successfully",
       data: await AttendanceService.create(actor(req).userId, {
         ...req.body,
-        sectionId: String(req.params.sectionId),
+        semesterCourseId: String(req.params.semesterCourseId),
       }),
     }),
   ),

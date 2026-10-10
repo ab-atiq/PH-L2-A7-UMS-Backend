@@ -5,7 +5,7 @@ export type StudentCreateData = {
   studentId: string;
   programId?: string | null;
   departmentId?: string | null;
-  currentSemesterId?: string | null;
+  currentProgramSemesterId?: string | null;
   batchYear?: number | null;
   gender?: Gender | null;
   dateOfBirth?: Date | null;
@@ -28,7 +28,7 @@ export type StudentListQuery = {
   search?: string;
   departmentId?: string;
   programId?: string;
-  currentSemesterId?: string;
+  currentProgramSemesterId?: string;
   status?: string;
   includeDeleted?: boolean | string;
 };

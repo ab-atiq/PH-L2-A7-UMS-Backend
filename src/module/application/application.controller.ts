@@ -14,7 +14,22 @@ const getUserId = (req: Request) => {
 };
 
 const listApplicationsByAdmin = catchAsync(async (req, res) => {
-  const result = await ApplicationService.listApplicationsByAdmin(req.query);
+  const result = await ApplicationService.listApplicationsByAdmin({
+    page: typeof req.query.page === "string" ? Number(req.query.page) : 1,
+    limit: typeof req.query.limit === "string" ? Number(req.query.limit) : 20,
+    ...(typeof req.query.search === "string"
+      ? { search: req.query.search }
+      : {}),
+    ...(req.query.requestedRole === "FACULTY" ||
+    req.query.requestedRole === "STUDENT"
+      ? { requestedRole: req.query.requestedRole }
+      : {}),
+    ...(req.query.status === "APPROVED" ||
+    req.query.status === "PENDING" ||
+    req.query.status === "REJECTED"
+      ? { status: req.query.status }
+      : {}),
+  });
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,

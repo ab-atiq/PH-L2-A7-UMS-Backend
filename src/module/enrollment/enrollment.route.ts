@@ -24,6 +24,4 @@ router.post(
   EnrollmentController.createEnrollment,
 );
 
-router.delete("/:id", auth(Role.STUDENT), EnrollmentController.dropEnrollment);
-
 export const EnrollmentRoutes = router;
