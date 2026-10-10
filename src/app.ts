@@ -1,7 +1,6 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Request, type Response } from "express";
-import config from "./config/index.js";
 import { prisma } from "./lib/prisma.js";
 import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 import { notFound } from "./middleware/notFound.js";
@@ -30,8 +29,9 @@ const app = express();
 
 app.use(
   cors({
-    origin: config.frontend_url,
+    origin: true,
     credentials: true,
+    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   }),
 );
 
