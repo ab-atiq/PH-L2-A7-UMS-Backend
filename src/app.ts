@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Request, type Response } from "express";
+import config from "./config/index.js";
 import { prisma } from "./lib/prisma.js";
 import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 import { notFound } from "./middleware/notFound.js";
@@ -26,10 +27,17 @@ import { TranscriptRoutes } from "./module/transcript/transcript.route.js";
 import { UserRoutes } from "./module/user/user.route.js";
 
 const app = express();
+const allowedOrigins = [
+  "https://ph-l2-a7-ums-frontend.vercel.app",
+  ...(config.frontend_url ?? "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
+];
 
 app.use(
   cors({
-    origin: true,
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   }),
