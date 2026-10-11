@@ -27,8 +27,10 @@ import { TranscriptRoutes } from "./module/transcript/transcript.route.js";
 import { UserRoutes } from "./module/user/user.route.js";
 
 const app = express();
+
 const allowedOrigins = [
   "https://ph-l2-a7-ums-frontend.vercel.app",
+  "http://localhost:3000",
   ...(config.frontend_url ?? "")
     .split(",")
     .map((origin) => origin.trim().replace(/\/+$/, ""))
@@ -37,7 +39,13 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
+    },
     credentials: true,
     methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   }),
