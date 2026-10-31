@@ -2709,6 +2709,54 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "19.Academic Assistant",
+      "description": "Student-only local academic guidance. No third-party AI provider is called and chat history is not persisted.",
+      "item": [
+        {
+          "name": "Ask Academic Assistant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"How do I enroll in the next semester?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/assistant/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["assistant", "chat"]
+            },
+            "description": "Requires a STUDENT bearer token. Matches the question to local university workflow guidance."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Academic Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/assistant/recommendations",
+              "host": ["{{baseUrl}}"],
+              "path": ["assistant", "recommendations"]
+            },
+            "description": "Requires a STUDENT bearer token. Returns next steps based on the signed-in student's program and semester enrollment statuses."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

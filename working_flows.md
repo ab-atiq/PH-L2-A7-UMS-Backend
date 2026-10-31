@@ -12,6 +12,7 @@
 8. **Semester ends** → publishing all final course results automatically calculates GPA and completes the semester.
 9. **Next semester unlocks** only after the previous one is `COMPLETED` → review and pay its fee, then enroll.
 10. Anytime: **view transcript** (all completed semesters + cumulative GPA), **view/pay invoices**, **view notifications**.
+11. Open **Academic advisor** for locally generated help on common university workflows and next-step recommendations based on the student's program and semester progress. Messages are not stored or sent to external AI providers.
 
 Student can never write attendance, exams, or results — view only.
 

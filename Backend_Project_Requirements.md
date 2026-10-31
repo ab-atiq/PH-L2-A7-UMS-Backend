@@ -164,6 +164,13 @@ The matrix below covers the three university roles; `USER` accounts have the lim
    - Emits in-app `Notification` and logs `AuditLog`.
 5. Frontend or clients **never** mark payment successful directly.
 
+### Workflow 10: Local Academic Assistant & Recommendations
+
+1. An authenticated student can ask the academic assistant about enrollment, fees, curriculum, attendance, exams, results, and profile workflows.
+2. The backend ranks known university help topics against the message and returns the matching guidance, related navigation actions, and suggested questions.
+3. The recommendations endpoint uses the student's own program curriculum and semester enrollment statuses to suggest a next step and relevant courses.
+4. This implementation uses local intent matching and deterministic academic rules; it does not call an external model, store chat history, or send student data to a third party.
+
 ---
 
 ## 5. Database Entities & Multi-File Schema
@@ -403,6 +410,12 @@ Every API response strictly adheres to this JSON structure:
 - `PATCH /api/v1/admin/users/:id/status` — [ADMIN] Activate/suspend user account.
 - `GET /api/v1/audit-logs` — [ADMIN] View immutable system audit log entries.
 
+### 7.17 Academic Assistant (`/api/v1/assistant`)
+
+- `POST /api/v1/assistant/chat` — [STUDENT] Match a message to university workflow guidance and return suggested actions/questions. Request body: `{ "message": "..." }` (2–500 characters).
+- `GET /api/v1/assistant/recommendations` — [STUDENT] Return next-step and course recommendations from the authenticated student's program and semester progress.
+- The assistant is locally computed; no external AI provider is used and conversation history is not persisted.
+
 ---
 
 ## 8. Clean Modular Architecture — Folder Structure
@@ -443,6 +456,7 @@ src/
 │   ├── payment/                   # gateway initiation & webhook handling
 │   ├── notification/              # in-app notification dispatch & read
 │   ├── admin/                     # dashboard analytics & user moderation
+│   ├── assistant/                 # local academic intent matching & recommendations
 │   └── auditLog/                  # append-only system audit log reader
 └── utils/
     ├── catchAsync.ts              # Async request handler wrapper
